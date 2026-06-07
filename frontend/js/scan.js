@@ -88,9 +88,12 @@ function displayResults(data) {
   document.getElementById("result-unfixable").textContent = data.unfixable_count || 0;
 
   const decisionEl = document.getElementById("result-decision");
-  var displayDecision = data.decision === "PASS_WITH_RISK" ? "PASS WITH RISK" : data.decision;
-  decisionEl.textContent = displayDecision;
-  decisionEl.className = "decision-badge " + data.decision.toLowerCase().replace(/_/g, "-");
+  decisionEl.className = "decision-badges";
+  decisionEl.innerHTML = renderDecisionBadges(
+    data.decision,
+    isRiskAccepted(data),
+    "decision-badge"
+  );
 
   var reasonEl = document.getElementById("result-status-reason");
   if (reasonEl) {
@@ -101,7 +104,7 @@ function displayResults(data) {
   localStorage.setItem("lastScanResult", JSON.stringify(data));
 
   var remediationLink = document.getElementById("remediation-link");
-  if (remediationLink && (data.decision === "FAIL" || data.decision === "PASS_WITH_RISK")) {
+  if (remediationLink && data.decision === "FAIL") {
     remediationLink.style.display = "inline-flex";
   } else if (remediationLink) {
     remediationLink.style.display = "none";
@@ -142,13 +145,12 @@ async function handleScan(event) {
 
     completeWorkflowAnimation();
     displayResults(data);
-    var alertType = data.decision === "PASS" ? "success" :
-      data.decision === "PASS_WITH_RISK" ? "success" : "error";
-    var alertDecision = data.decision === "PASS_WITH_RISK" ? "PASS WITH RISK" : data.decision;
-    showAlert(
-      "Security assessment completed. Decision: " + alertDecision,
-      alertType
-    );
+    var alertType = normalizeDecision(data.decision) === "PASS" ? "success" : "error";
+    var alertText = "Security assessment completed. Decision: " + formatDecision(data.decision);
+    if (isRiskAccepted(data)) {
+      alertText += " (Risk Accepted)";
+    }
+    showAlert(alertText, alertType);
   } catch (error) {
     if (workflowInterval) {
       clearInterval(workflowInterval);

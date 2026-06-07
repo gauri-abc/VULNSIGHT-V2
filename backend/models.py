@@ -61,6 +61,7 @@ class ScanHistory(Base):
     decision = Column(String(32), default="PASS")
     fixable_count = Column(Integer, default=0)
     unfixable_count = Column(Integer, default=0)
+    risk_accepted = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     repository = relationship("Repository", back_populates="scan_history")

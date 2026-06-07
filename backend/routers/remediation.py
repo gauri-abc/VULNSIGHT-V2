@@ -53,6 +53,11 @@ def _to_response(remediation: Remediation, service: Service) -> RemediationRespo
     pending_dependency_fixes = [f for f in dependency_fixes_raw if not f.get("applied")]
     patches_raw = json.loads(getattr(remediation, "dependency_patches_json", None) or "[]")
     dependency_patches = [DependencyPatch(**p) for p in patches_raw]
+    risk_accepted = policy_service.is_risk_accepted(
+        vuln_dicts,
+        remediation_state=state,
+        pending_dependency_fixes=pending_dependency_fixes,
+    )
     status_reason = policy_service.get_status_reason(
         vuln_dicts,
         decision,
@@ -109,6 +114,7 @@ def _to_response(remediation: Remediation, service: Service) -> RemediationRespo
         dependency_fixes=dependency_fixes,
         dependency_patches=dependency_patches,
         pending_dependency_count=len(pending_dependency_fixes),
+        risk_accepted=risk_accepted,
     )
 
 

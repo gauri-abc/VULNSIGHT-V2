@@ -21,6 +21,7 @@ class RepositoryScanResponse(BaseModel):
     decision: str
     fixable_count: int = 0
     unfixable_count: int = 0
+    risk_accepted: bool = False
     status_reason: str = ""
 
 
@@ -39,6 +40,7 @@ class ServiceResponse(BaseModel):
     unfixable_count: int = 0
     status_reason: str = ""
     remediation_state: Optional[str] = None
+    risk_accepted: bool = False
 
 
 class ScanHistoryResponse(BaseModel):
@@ -53,6 +55,7 @@ class ScanHistoryResponse(BaseModel):
     decision: str
     fixable_count: int = 0
     unfixable_count: int = 0
+    risk_accepted: bool = False
     created_at: datetime
 
 
@@ -178,6 +181,7 @@ class RemediationResponse(BaseModel):
     dependency_fixes: list[DependencyFix] = []
     dependency_patches: list[DependencyPatch] = []
     pending_dependency_count: int = 0
+    risk_accepted: bool = False
 
 
 class RemediationHistoryResponse(BaseModel):

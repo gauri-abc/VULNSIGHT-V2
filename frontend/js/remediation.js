@@ -108,12 +108,8 @@ function formatState(state) {
   return state.replace("REMEDIATION_", "").replace(/_/g, " ");
 }
 
-function formatDecision(decision) {
-  return decision === "PASS_WITH_RISK" ? "PASS WITH RISK" : decision;
-}
-
 function decisionClass(decision) {
-  return decision.toLowerCase().replace(/_/g, "-");
+  return primaryDecisionClass(decision);
 }
 
 function renderRemediationCard(rem) {
@@ -258,13 +254,13 @@ function renderRemediationCard(rem) {
     "</div>" +
     '<div class="header-badges">' +
     '<span class="state-badge ' + stateClass + '">' + formatState(rem.remediation_state) + "</span>" +
-    '<span class="status-badge ' + decisionClass(rem.current_decision) + '">' + formatDecision(rem.current_decision) + "</span>" +
+    renderDecisionBadges(rem.current_decision, isRiskAccepted(rem)) +
     "</div></div>" +
 
     '<div class="status-banner ' + statusBannerClass + '">' +
     "<strong>" + escapeHtml(rem.status_message) + "</strong>" +
-    (isExhausted && rem.current_decision === "PASS_WITH_RISK"
-      ? "<p><strong>Deployment Approved</strong> — No additional remediation available. All Dockerfile fixes applied. Waiting for vendor security updates.</p>"
+    (isExhausted && isRiskAccepted(rem)
+      ? "<p><strong>Deployment Approved</strong> — All available remediations have been applied. Remaining vulnerabilities originate from upstream vendor packages. Risk has been accepted.</p>"
       : "") +
     (isApplied || isExhausted
       ? '<p>Fixable: <strong>' + (rem.fixable_count || 0) + "</strong> | Unfixable: <strong>" + (rem.unfixable_count || 0) + "</strong></p>"

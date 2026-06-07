@@ -184,21 +184,25 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
         security_score = scoring_service.calculate_score(total_counts)
         decision = policy_service.evaluate_repository(service_policy_data)
         all_pending_deps = []
+        remediation_states = []
         for svc_data in service_policy_data:
             all_pending_deps.extend(svc_data.get("pending_dependency_fixes", []))
+            state = svc_data.get("remediation_state")
+            if state:
+                remediation_states.append(state)
+
+        risk_accepted = policy_service.is_risk_accepted(
+            all_vulnerabilities,
+            remediation_states=remediation_states or None,
+            pending_dependency_fixes=all_pending_deps,
+        )
         status_reason = policy_service.get_status_reason(
             all_vulnerabilities,
             decision,
             service_policy_data[0].get("remediation_state") if len(service_policy_data) == 1 else None,
             pending_dependency_fixes=all_pending_deps,
+            remediation_states=remediation_states or None,
         )
-
-        if decision == "PASS_WITH_RISK":
-            status_reason = (
-                f"Deployment Approved. {repo_classification['unfixable_count']} vulnerabilities "
-                f"have no vendor-provided fix. All fixes applied. "
-                f"Waiting for upstream vendor security updates."
-            )
 
         scan_record = ScanHistory(
             repository_id=repository.id,
@@ -210,6 +214,7 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
             decision=decision,
             fixable_count=repo_classification["fixable_count"],
             unfixable_count=repo_classification["unfixable_count"],
+            risk_accepted=1 if risk_accepted else 0,
         )
         db.add(scan_record)
         db.flush()
@@ -242,6 +247,7 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
             counts=total_counts,
             decision=decision,
             repository_name=repo_name,
+            risk_accepted=risk_accepted,
         )
 
         return RepositoryScanResponse(
@@ -257,6 +263,7 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
             decision=decision,
             fixable_count=repo_classification["fixable_count"],
             unfixable_count=repo_classification["unfixable_count"],
+            risk_accepted=risk_accepted,
             status_reason=status_reason,
         )
 

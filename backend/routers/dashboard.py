@@ -34,7 +34,7 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
     )
     pass_with_risk_count = (
         db.query(func.count(ScanHistory.id))
-        .filter(ScanHistory.decision == "PASS_WITH_RISK")
+        .filter(ScanHistory.risk_accepted == 1)
         .scalar()
         or 0
     )

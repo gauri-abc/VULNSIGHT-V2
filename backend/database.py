@@ -16,6 +16,7 @@ Base = declarative_base()
 SCAN_HISTORY_COLUMN_MIGRATIONS = [
     ("fixable_count", "INTEGER DEFAULT 0"),
     ("unfixable_count", "INTEGER DEFAULT 0"),
+    ("risk_accepted", "INTEGER DEFAULT 0"),
 ]
 
 REMEDIATION_COLUMN_MIGRATIONS = [
@@ -117,6 +118,13 @@ def migrate_schema():
                     conn.execute(
                         text(f"ALTER TABLE scan_history ADD COLUMN {col_name} {col_def}")
                     )
+
+            conn.execute(
+                text(
+                    "UPDATE scan_history SET decision = 'PASS', risk_accepted = 1 "
+                    "WHERE decision = 'PASS_WITH_RISK'"
+                )
+            )
 
 
 def init_db():

@@ -4,12 +4,8 @@ document.addEventListener("DOMContentLoaded", function () {
   loadServices();
 });
 
-function formatDecision(status) {
-  return status === "PASS_WITH_RISK" ? "PASS WITH RISK" : status;
-}
-
 function decisionClass(status) {
-  return status.toLowerCase().replace(/_/g, "-");
+  return primaryDecisionClass(status);
 }
 
 async function loadServices() {
@@ -35,7 +31,6 @@ async function loadServices() {
 
     tbody.innerHTML = services
       .map(function (svc) {
-        const statusClass = decisionClass(svc.status);
         var remediateBtn = "";
         if (svc.status === "FAIL") {
           remediateBtn =
@@ -61,8 +56,7 @@ async function loadServices() {
           "<td>" + (svc.fixable_count || 0) + "</td>" +
           "<td>" + (svc.unfixable_count || 0) + "</td>" +
           "<td>" + svc.score + "</td>" +
-          '<td><span class="status-badge ' + statusClass + '">' + formatDecision(svc.status) + "</span>" +
-          reasonHtml + remediateBtn + "</td>" +
+          "<td>" + renderDecisionBadges(svc.status, isRiskAccepted(svc)) + reasonHtml + remediateBtn + "</td>" +
           "</tr>"
         );
       })

@@ -452,7 +452,7 @@ class RemediationService:
         if classification["unfixable_count"] > 0:
             fixes.append(
                 f"{classification['unfixable_count']} vulnerabilities have no vendor fix. "
-                f"Deployment may proceed with risk acceptance (PASS WITH RISK)."
+                f"Deployment may proceed with risk acceptance."
             )
 
         fixes.append("Re-scan when upstream vendors publish security updates.")
@@ -681,7 +681,7 @@ class RemediationService:
         }
 
     def needs_remediation_record(self, vulnerabilities: list[dict], decision: str) -> bool:
-        if decision in ("FAIL", "PASS_WITH_RISK"):
+        if decision == "FAIL":
             return True
         classification = self.policy_service.classify_vulnerabilities(vulnerabilities)
         return classification["fixable_count"] > 0 or classification["unfixable_critical"] > 0

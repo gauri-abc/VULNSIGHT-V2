@@ -2,6 +2,12 @@ REMEDIATION_AVAILABLE = "REMEDIATION_AVAILABLE"
 REMEDIATION_APPLIED = "REMEDIATION_APPLIED"
 REMEDIATION_EXHAUSTED = "REMEDIATION_EXHAUSTED"
 
+RISK_ACCEPTED_MESSAGE = (
+    "Deployment Approved. All available remediations have been applied. "
+    "Remaining vulnerabilities originate from upstream vendor packages. "
+    "No vendor-provided fixes are currently available. Risk has been accepted."
+)
+
 
 class PolicyService:
     def is_fixable(self, vulnerability: dict) -> bool:
@@ -71,9 +77,34 @@ class PolicyService:
         all_unfixable = classification["fixable_count"] == 0 and remaining > 0
 
         if all_unfixable and remediation_state == REMEDIATION_EXHAUSTED:
-            return "PASS_WITH_RISK"
+            return "PASS"
 
         return "FAIL"
+
+    def is_risk_accepted(
+        self,
+        vulnerabilities: list[dict],
+        remediation_state: str | None = None,
+        pending_dependency_fixes: list[dict] | None = None,
+        remediation_states: list[str] | None = None,
+    ) -> bool:
+        if not vulnerabilities:
+            return False
+
+        classification = self.classify_vulnerabilities(vulnerabilities)
+        if classification["fixable_count"] != 0:
+            return False
+        if classification["unfixable_count"] == 0:
+            return False
+        if pending_dependency_fixes:
+            return False
+
+        if remediation_states is not None:
+            if not remediation_states:
+                return False
+            return all(state == REMEDIATION_EXHAUSTED for state in remediation_states)
+
+        return remediation_state == REMEDIATION_EXHAUSTED
 
     def evaluate_repository(self, services: list[dict]) -> str:
         all_vulnerabilities = []
@@ -106,21 +137,21 @@ class PolicyService:
         decision: str,
         remediation_state: str | None = None,
         pending_dependency_fixes: list[dict] | None = None,
+        remediation_states: list[str] | None = None,
     ) -> str:
         classification = self.classify_vulnerabilities(vulnerabilities)
         total = len(vulnerabilities)
         pending_deps = pending_dependency_fixes or []
 
         if decision == "PASS":
+            if self.is_risk_accepted(
+                vulnerabilities,
+                remediation_state=remediation_state,
+                pending_dependency_fixes=pending_deps,
+                remediation_states=remediation_states,
+            ):
+                return RISK_ACCEPTED_MESSAGE
             return "No critical or high vulnerabilities detected."
-
-        if decision == "PASS_WITH_RISK":
-            return (
-                f"{total} vulnerabilities remain. "
-                f"{classification['unfixable_count']} have no vendor-provided fix. "
-                f"Deployment may continue. All fixes have been applied. "
-                f"Waiting for upstream vendor security updates."
-            )
 
         if pending_deps:
             dep_files = sorted({f.get("source_file", "dependency file") for f in pending_deps})

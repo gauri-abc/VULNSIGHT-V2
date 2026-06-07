@@ -11,6 +11,7 @@ class AlertService:
         counts: dict,
         decision: str,
         repository_name: str,
+        risk_accepted: bool = False,
     ) -> list[Alert]:
         alerts = []
 
@@ -26,26 +27,26 @@ class AlertService:
                 )
             )
 
-        if decision == "PASS_WITH_RISK":
-            alerts.append(
-                Alert(
-                    repository_id=repository_id,
-                    message=(
-                        f"Security gate PASS WITH RISK for {repository_name}: "
-                        f"deployment approved. Remaining vulnerabilities have no vendor fix."
-                    ),
-                    severity="MEDIUM",
-                )
-            )
-
         if decision == "PASS":
-            alerts.append(
-                Alert(
-                    repository_id=repository_id,
-                    message=f"Security gate PASSED for {repository_name}.",
-                    severity="INFO",
+            if risk_accepted:
+                alerts.append(
+                    Alert(
+                        repository_id=repository_id,
+                        message=(
+                            f"Security gate PASSED for {repository_name}. "
+                            f"Risk accepted — remaining vulnerabilities have no vendor fix."
+                        ),
+                        severity="INFO",
+                    )
                 )
-            )
+            else:
+                alerts.append(
+                    Alert(
+                        repository_id=repository_id,
+                        message=f"Security gate PASSED for {repository_name}.",
+                        severity="INFO",
+                    )
+                )
 
         for alert in alerts:
             db.add(alert)

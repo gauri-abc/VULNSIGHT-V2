@@ -40,9 +40,11 @@ def get_scan_history(db: Session = Depends(get_db)):
             medium=scan.medium,
             low=scan.low,
             security_score=scan.security_score,
-            decision=scan.decision,
+            decision=scan.decision if scan.decision != "PASS_WITH_RISK" else "PASS",
             fixable_count=getattr(scan, "fixable_count", 0) or 0,
             unfixable_count=getattr(scan, "unfixable_count", 0) or 0,
+            risk_accepted=bool(getattr(scan, "risk_accepted", 0))
+            or scan.decision == "PASS_WITH_RISK",
             created_at=scan.created_at,
         )
         for scan in scans

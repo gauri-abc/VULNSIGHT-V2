@@ -20,9 +20,6 @@ async function loadReports() {
     container.innerHTML = reports
       .map(function (report) {
         const date = new Date(report.created_at).toLocaleString();
-        const decisionClass = report.decision.toLowerCase().replace(/_/g, "-");
-        const displayDecision = report.decision === "PASS_WITH_RISK" ? "PASS WITH RISK" : report.decision;
-
         return (
           '<div class="report-item">' +
           '<div class="report-info">' +
@@ -30,7 +27,7 @@ async function loadReports() {
           "<p>" + escapeHtml(report.repo_url) + "</p>" +
           "<p>Scanned: " + date +
           " | Score: " + report.security_score +
-          ' | <span class="status-badge ' + decisionClass + '">' + displayDecision + "</span></p>" +
+          " | " + renderDecisionBadges(report.decision, isRiskAccepted(report)) + "</p>" +
           "<p>Critical: " + report.critical +
           " | High: " + report.high +
           " | Medium: " + report.medium +

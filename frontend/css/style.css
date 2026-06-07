@@ -401,17 +401,26 @@ a:hover {
   border: 2px solid var(--danger);
 }
 
-.decision-badge.pass_with_risk,
-.decision-badge.pass-with-risk {
-  background: rgba(217, 119, 6, 0.12);
-  color: #b45309;
-  border: 2px solid var(--warning);
+.risk-accepted-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+  border: 1px solid rgba(100, 116, 139, 0.28);
+  vertical-align: middle;
+  margin-left: 0.35rem;
 }
 
-.status-badge.pass_with_risk,
-.status-badge.pass-with-risk {
-  background: rgba(217, 119, 6, 0.12);
-  color: #b45309;
+.decision-badges {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
 }
 
 /* Tables */

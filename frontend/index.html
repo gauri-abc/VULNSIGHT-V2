@@ -141,7 +141,9 @@
         </div>
         <div class="stat-card" style="grid-column: span 2; text-align: center;">
           <div class="stat-label">Deployment Decision</div>
-          <div id="result-decision" class="decision-badge pass">PASS</div>
+          <div id="result-decision" class="decision-badges">
+            <span class="decision-badge pass">PASS</span>
+          </div>
           <p id="result-status-reason" style="margin-top:0.75rem;font-size:0.85rem;color:var(--text-secondary);"></p>
         </div>
       </div>
@@ -159,6 +161,7 @@
     VULNSIGHT-V2 &copy; 2026 &mdash; DevSecOps Security Gate Platform
   </footer>
 
+  <script src="js/decisions.js"></script>
   <script src="js/scan.js"></script>
 </body>
 </html>

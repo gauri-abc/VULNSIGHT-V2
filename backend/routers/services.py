@@ -54,6 +54,11 @@ def get_services_by_scan(scan_id: int, db: Session = Depends(get_db)):
             remediation_state=remediation_state,
             pending_dependency_fixes=pending_dependency_fixes,
         )
+        risk_accepted = policy_service.is_risk_accepted(
+            vulns,
+            remediation_state=remediation_state,
+            pending_dependency_fixes=pending_dependency_fixes,
+        )
         status_reason = policy_service.get_status_reason(
             vulns,
             status,
@@ -77,6 +82,7 @@ def get_services_by_scan(scan_id: int, db: Session = Depends(get_db)):
                 unfixable_count=classification["unfixable_count"],
                 status_reason=status_reason,
                 remediation_state=remediation_state,
+                risk_accepted=risk_accepted,
             )
         )
 
