@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VULNSIGHT-V2 | Services</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-brand">
+      <div class="nav-logo">VS</div>
+      <div>
+        <div class="nav-title">VULNSIGHT-V2</div>
+        <div class="nav-subtitle">DevSecOps Security Gate</div>
+      </div>
+    </div>
+    <ul class="nav-links">
+      <li><a href="index.html">Scan</a></li>
+      <li><a href="services.html" class="active">Services</a></li>
+      <li><a href="reports.html">Reports</a></li>
+      <li><a href="dashboard.html">Dashboard</a></li>
+    </ul>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <h1>Service Analysis</h1>
+      <p>Per-service vulnerability breakdown from the latest scan</p>
+    </div>
+
+    <div class="table-container card" style="padding: 0;">
+      <table>
+        <thead>
+          <tr>
+            <th>Service Name</th>
+            <th>Dockerfile Path</th>
+            <th>Image Name</th>
+            <th>Critical</th>
+            <th>High</th>
+            <th>Medium</th>
+            <th>Low</th>
+            <th>Score</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="services-table-body">
+          <tr>
+            <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+              No services found. Run a security scan first.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer class="footer">
+    VULNSIGHT-V2 &copy; 2026 &mdash; DevSecOps Security Gate Platform
+  </footer>
+
+  <script src="js/services.js"></script>
+</body>
+</html>

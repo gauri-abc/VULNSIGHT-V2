@@ -1,0 +1,119 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "postgres", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "pieType": "donut",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${datasource}" },
+          "format": "table",
+          "rawSql": "SELECT severity, COUNT(*) AS count FROM vulnerabilities GROUP BY severity ORDER BY CASE severity WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 ELSE 4 END",
+          "refId": "A"
+        }
+      ],
+      "title": "Vulnerabilities by Severity",
+      "type": "piechart"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${datasource}" },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS repositories FROM repositories",
+          "refId": "A"
+        }
+      ],
+      "title": "Repositories Scanned",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "id": 3,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${datasource}" },
+          "format": "table",
+          "rawSql": "SELECT ROUND(AVG(security_score), 2) AS avg_score FROM scan_history",
+          "refId": "A"
+        }
+      ],
+      "title": "Average Security Score",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${datasource}" },
+          "format": "time_series",
+          "rawSql": "SELECT created_at AS time, security_score AS value, decision FROM scan_history ORDER BY created_at",
+          "refId": "A"
+        }
+      ],
+      "title": "Security Score Trend",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "id": 5,
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${datasource}" },
+          "format": "table",
+          "rawSql": "SELECT r.name AS repository, s.service_name, s.dockerfile_path, COUNT(v.id) AS total_vulns, SUM(CASE WHEN v.severity = 'CRITICAL' THEN 1 ELSE 0 END) AS critical, SUM(CASE WHEN v.severity = 'HIGH' THEN 1 ELSE 0 END) AS high FROM services s JOIN repositories r ON s.repository_id = r.id LEFT JOIN vulnerabilities v ON v.service_id = s.id GROUP BY r.name, s.service_name, s.dockerfile_path ORDER BY critical DESC, high DESC LIMIT 10",
+          "refId": "A"
+        }
+      ],
+      "title": "Top Vulnerable Services",
+      "type": "table"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["vulnsight", "security"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30d", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "VULNSIGHT-V2 Overview",
+  "uid": "vulnsight-overview",
+  "version": 1
+}

@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: VULNSIGHT Dashboards
+    orgId: 1
+    folder: VULNSIGHT
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

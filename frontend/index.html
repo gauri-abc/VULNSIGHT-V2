@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VULNSIGHT-V2 | Security Scan</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-brand">
+      <div class="nav-logo">VS</div>
+      <div>
+        <div class="nav-title">VULNSIGHT-V2</div>
+        <div class="nav-subtitle">DevSecOps Security Gate</div>
+      </div>
+    </div>
+    <ul class="nav-links">
+      <li><a href="index.html" class="active">Scan</a></li>
+      <li><a href="services.html">Services</a></li>
+      <li><a href="reports.html">Reports</a></li>
+      <li><a href="dashboard.html">Dashboard</a></li>
+    </ul>
+  </nav>
+
+  <div class="container">
+    <section class="hero">
+      <h1>VULNSIGHT-V2</h1>
+      <p>DevSecOps Security Gate Platform</p>
+    </section>
+
+    <div id="alert-container"></div>
+
+    <form class="scan-form card" id="scan-form">
+      <div class="form-group">
+        <label for="repo-url">GitHub Repository URL</label>
+        <input
+          type="url"
+          id="repo-url"
+          class="form-input"
+          placeholder="https://github.com/gauri-abc/QuicKart"
+          value="https://github.com/gauri-abc/QuicKart"
+          required
+        >
+      </div>
+      <button type="submit" class="btn btn-primary" id="scan-btn">
+        Start Security Assessment
+      </button>
+    </form>
+
+    <section class="workflow-section" id="workflow-section">
+      <div class="card">
+        <h3 style="margin-bottom: 1rem;">Security Assessment Pipeline</h3>
+        <div class="workflow-steps" id="workflow-steps">
+          <div class="workflow-step" data-step="0">
+            <span class="step-icon">1</span>
+            <span>Repository Received</span>
+          </div>
+          <div class="workflow-step" data-step="1">
+            <span class="step-icon">2</span>
+            <span>Cloning Repository</span>
+          </div>
+          <div class="workflow-step" data-step="2">
+            <span class="step-icon">3</span>
+            <span>Finding Dockerfiles</span>
+          </div>
+          <div class="workflow-step" data-step="3">
+            <span class="step-icon">4</span>
+            <span>Building Images</span>
+          </div>
+          <div class="workflow-step" data-step="4">
+            <span class="step-icon">5</span>
+            <span>Running Trivy</span>
+          </div>
+          <div class="workflow-step" data-step="5">
+            <span class="step-icon">6</span>
+            <span>Calculating Security Score</span>
+          </div>
+          <div class="workflow-step" data-step="6">
+            <span class="step-icon">7</span>
+            <span>Applying Security Policies</span>
+          </div>
+          <div class="workflow-step" data-step="7">
+            <span class="step-icon">8</span>
+            <span>Generating Report</span>
+          </div>
+        </div>
+        <div class="progress-bar-container">
+          <div class="progress-bar" id="progress-bar"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="results-section" id="results-section">
+      <div class="page-header">
+        <h2>Scan Results</h2>
+        <p>Security assessment completed for <span id="result-repo-name"></span></p>
+      </div>
+
+      <div class="card-grid">
+        <div class="stat-card">
+          <div class="stat-label">Repository Name</div>
+          <div class="stat-value" id="result-repository" style="font-size: 1.25rem;">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Dockerfiles Found</div>
+          <div class="stat-value" id="result-dockerfiles">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Images Built</div>
+          <div class="stat-value" id="result-images">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Critical Count</div>
+          <div class="stat-value critical" id="result-critical">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">High Count</div>
+          <div class="stat-value high" id="result-high">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Medium Count</div>
+          <div class="stat-value medium" id="result-medium">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Low Count</div>
+          <div class="stat-value low" id="result-low">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Security Score</div>
+          <div class="stat-value score" id="result-score">0</div>
+        </div>
+        <div class="stat-card" style="grid-column: span 2; text-align: center;">
+          <div class="stat-label">Deployment Decision</div>
+          <div id="result-decision" class="decision-badge pass">PASS</div>
+        </div>
+      </div>
+
+      <div class="btn-group" style="justify-content: center; margin-top: 1rem;">
+        <a href="services.html" class="btn btn-secondary">View Services</a>
+        <a href="reports.html" class="btn btn-secondary">View Reports</a>
+        <a href="dashboard.html" class="btn btn-secondary">View Dashboard</a>
+      </div>
+    </section>
+  </div>
+
+  <footer class="footer">
+    VULNSIGHT-V2 &copy; 2026 &mdash; DevSecOps Security Gate Platform
+  </footer>
+
+  <script src="js/scan.js"></script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vulnsight-postgres
+    environment:
+      POSTGRES_USER: vulnsight
+      POSTGRES_PASSWORD: vulnsight
+      POSTGRES_DB: vulnsight
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vulnsight -d vulnsight"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - vulnsight-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vulnsight-backend
+    environment:
+      DATABASE_URL: postgresql://vulnsight:vulnsight@postgres:5432/vulnsight
+      TRIVY_CACHE_DIR: /tmp/trivy-cache
+    ports:
+      - "8000:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - scan_data:/tmp/scans
+      - trivy_cache:/tmp/trivy-cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - vulnsight-net
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: vulnsight-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - vulnsight-net
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: vulnsight-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: vulnsight
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: ""
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - vulnsight-net
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  grafana_data:
+  scan_data:
+  trivy_cache:
+
+networks:
+  vulnsight-net:
+    driver: bridge
