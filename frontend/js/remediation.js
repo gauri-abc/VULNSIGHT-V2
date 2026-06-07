@@ -16,6 +16,17 @@ async function loadRemediations() {
     }
 
     const response = await fetch(url);
+    if (!response.ok) {
+      const text = await response.text();
+      let detail = response.statusText;
+      try {
+        const errBody = JSON.parse(text);
+        detail = errBody.detail || detail;
+      } catch (e) {
+        if (text) detail = text.substring(0, 200);
+      }
+      throw new Error(detail);
+    }
     const remediations = await response.json();
 
     if (!remediations.length) {
@@ -55,6 +66,10 @@ async function loadRemediationHistory() {
     }
 
     const response = await fetch(url);
+    if (!response.ok) {
+      panel.style.display = "none";
+      return;
+    }
     const history = await response.json();
 
     if (!history.length) {

@@ -11,66 +11,92 @@ from schemas import RemediationResponse, VulnerabilitySummary, RemediationHistor
 router = APIRouter(prefix="/api/remediation", tags=["remediation"])
 
 
+def _safe_int(value, default=0) -> int:
+    return int(value) if value is not None else default
+
+
+def _safe_float(value, default=0.0) -> float:
+    return float(value) if value is not None else default
+
+
 def _to_response(remediation: Remediation, service: Service) -> RemediationResponse:
     vulns_raw = json.loads(remediation.vulnerabilities_json or "[]")
     vulnerabilities = [VulnerabilitySummary(**v) for v in vulns_raw]
+
+    state = remediation.remediation_state or "REMEDIATION_AVAILABLE"
+    show_fix = remediation.show_generate_fix
+    if show_fix is None:
+        show_fix = 1 if remediation.updated_dockerfile else 0
 
     return RemediationResponse(
         id=remediation.id,
         service_id=service.id,
         service_name=service.service_name,
         dockerfile_path=service.dockerfile_path,
-        remediation_state=remediation.remediation_state,
+        remediation_state=state,
         status_message=remediation.status_message or "",
-        show_generate_fix=bool(remediation.show_generate_fix),
-        current_dockerfile=remediation.current_dockerfile,
+        show_generate_fix=bool(show_fix),
+        current_dockerfile=remediation.current_dockerfile or "",
         updated_dockerfile=remediation.updated_dockerfile or "",
         previous_updated_dockerfile=remediation.previous_updated_dockerfile or "",
         root_cause_analysis=json.loads(remediation.root_cause_analysis or "[]"),
         recommended_fixes=json.loads(remediation.recommended_fixes or "[]"),
         vulnerabilities_found=vulnerabilities,
-        current_critical=remediation.current_critical,
-        current_high=remediation.current_high,
-        current_medium=remediation.current_medium,
-        current_low=remediation.current_low,
-        estimated_critical=remediation.estimated_critical,
-        estimated_high=remediation.estimated_high,
-        estimated_medium=remediation.estimated_medium,
-        estimated_low=remediation.estimated_low,
-        remaining_critical=remediation.remaining_critical,
-        remaining_high=remediation.remaining_high,
-        remaining_medium=remediation.remaining_medium,
-        remaining_low=remediation.remaining_low,
-        current_decision=remediation.current_decision,
-        estimated_decision=remediation.estimated_decision,
-        original_score=remediation.original_score,
-        score_after_remediation=remediation.score_after_remediation,
-        improvement_percentage=remediation.improvement_percentage,
-        original_critical=remediation.original_critical,
-        original_high=remediation.original_high,
-        original_medium=remediation.original_medium,
-        original_low=remediation.original_low,
+        current_critical=_safe_int(remediation.current_critical),
+        current_high=_safe_int(remediation.current_high),
+        current_medium=_safe_int(remediation.current_medium),
+        current_low=_safe_int(remediation.current_low),
+        estimated_critical=_safe_int(remediation.estimated_critical),
+        estimated_high=_safe_int(remediation.estimated_high),
+        estimated_medium=_safe_int(remediation.estimated_medium),
+        estimated_low=_safe_int(remediation.estimated_low),
+        remaining_critical=_safe_int(
+            remediation.remaining_critical, remediation.current_critical
+        ),
+        remaining_high=_safe_int(remediation.remaining_high, remediation.current_high),
+        remaining_medium=_safe_int(
+            remediation.remaining_medium, remediation.current_medium
+        ),
+        remaining_low=_safe_int(remediation.remaining_low, remediation.current_low),
+        current_decision=remediation.current_decision or "FAIL",
+        estimated_decision=remediation.estimated_decision or "PASS",
+        original_score=_safe_float(remediation.original_score),
+        score_after_remediation=_safe_float(remediation.score_after_remediation),
+        improvement_percentage=_safe_float(remediation.improvement_percentage),
+        original_critical=_safe_int(
+            remediation.original_critical, remediation.current_critical
+        ),
+        original_high=_safe_int(remediation.original_high, remediation.current_high),
+        original_medium=_safe_int(
+            remediation.original_medium, remediation.current_medium
+        ),
+        original_low=_safe_int(remediation.original_low, remediation.current_low),
     )
 
 
 @router.get("/scan/{scan_id}", response_model=list[RemediationResponse])
 def get_remediations_by_scan(scan_id: int, db: Session = Depends(get_db)):
-    scan = db.query(ScanHistory).filter(ScanHistory.id == scan_id).first()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    try:
+        scan = db.query(ScanHistory).filter(ScanHistory.id == scan_id).first()
+        if not scan:
+            raise HTTPException(status_code=404, detail="Scan not found")
 
-    services = (
-        db.query(Service)
-        .filter(Service.repository_id == scan.repository_id)
-        .all()
-    )
+        services = (
+            db.query(Service)
+            .filter(Service.repository_id == scan.repository_id)
+            .all()
+        )
 
-    results = []
-    for service in services:
-        if service.remediation:
-            results.append(_to_response(service.remediation, service))
+        results = []
+        for service in services:
+            if service.remediation:
+                results.append(_to_response(service.remediation, service))
 
-    return results
+        return results
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/latest", response_model=list[RemediationResponse])
@@ -95,7 +121,7 @@ def get_remediation_history_by_scan(scan_id: int, db: Session = Depends(get_db))
     repo_url = scan.repository.repo_url
     records = (
         db.query(RemediationHistory)
-        .join(Repository)
+        .join(Repository, RemediationHistory.repository_id == Repository.id)
         .filter(Repository.repo_url == repo_url)
         .order_by(RemediationHistory.created_at.asc())
         .all()
