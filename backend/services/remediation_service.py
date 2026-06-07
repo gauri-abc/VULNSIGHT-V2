@@ -87,6 +87,9 @@ class RemediationService:
         pending_dependency_fixes = self.dependency_service.get_pending_dependency_fixes(
             dependency_fixes
         )
+        dependency_patches = self.dependency_service.generate_dependency_patches(
+            dependency_fixes, build_context
+        )
 
         current_counts = self.trivy_service.count_by_severity(vulnerabilities)
         classification = self.policy_service.classify_vulnerabilities(vulnerabilities)
@@ -196,6 +199,7 @@ class RemediationService:
             "current_decision": current_decision,
             "estimated_decision": estimated_decision,
             "dependency_fixes": dependency_fixes,
+            "dependency_patches": dependency_patches,
             "pending_dependency_count": len(pending_dependency_fixes),
             "status_reason": self.policy_service.get_status_reason(
                 vulnerabilities,
@@ -468,9 +472,11 @@ class RemediationService:
 
         if pending_deps:
             dep_files = sorted({f["source_file"] for f in pending_deps})
+            total_cves = sum(f.get("impact", 1) for f in pending_deps)
             causes.append(
-                f"{len(pending_deps)} application dependency vulnerabilities must be fixed "
-                f"in {', '.join(dep_files)}, not in the Dockerfile."
+                f"{total_cves} application dependency vulnerabilities across "
+                f"{len(pending_deps)} package(s) must be fixed in "
+                f"{', '.join(dep_files)}, not in the Dockerfile."
             )
 
         if classification["fixable_critical"] > 0:
@@ -512,12 +518,14 @@ class RemediationService:
 
         if pending_deps:
             for dep_fix in pending_deps[:5]:
+                cve_list = ", ".join(dep_fix.get("cve_ids", [])[:3])
+                suffix = "..." if len(dep_fix.get("cve_ids", [])) > 3 else ""
                 fixes.append(
-                    f"Update {dep_fix['source_file']}: change "
-                    f"'{dep_fix['current']}' to '{dep_fix['recommended']}' "
-                    f"({dep_fix['reason']})."
+                    f"Update {dep_fix['package_name']} in {dep_fix['source_file']}: "
+                    f"{dep_fix['current']} → {dep_fix['recommended']} "
+                    f"({dep_fix.get('impact', 1)} CVEs: {cve_list}{suffix})."
                 )
-            fixes.append("Rebuild the image and re-scan after updating dependency files.")
+            fixes.append("Apply the dependency patch, rebuild the image, and re-scan.")
 
         dockerfile_vulns = [
             v for v in vulnerabilities

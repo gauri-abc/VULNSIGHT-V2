@@ -121,6 +121,20 @@ class DependencyFix(BaseModel):
     fixed_version: str = ""
     ecosystem: str = ""
     applied: bool = False
+    current_line: str = ""
+    recommended_line: str = ""
+    cve_ids: list[str] = []
+    fixes: list[str] = []
+    impact: int = 1
+
+
+class DependencyPatch(BaseModel):
+    source_file: str
+    current_section: str
+    recommended_section: str
+    recommended_file_content: str
+    package_count: int = 0
+    vulnerability_count: int = 0
 
 
 class RemediationResponse(BaseModel):
@@ -162,6 +176,7 @@ class RemediationResponse(BaseModel):
     unfixable_count: int = 0
     status_reason: str = ""
     dependency_fixes: list[DependencyFix] = []
+    dependency_patches: list[DependencyPatch] = []
     pending_dependency_count: int = 0
 
 

@@ -38,7 +38,7 @@ async function loadRemediations() {
 
     container.innerHTML = remediations.map(renderRemediationCard).join("");
     bindCopyButtons();
-    bindDependencyCopyButtons();
+    bindPatchCopyButtons();
 
     if (window.location.hash) {
       var target = document.querySelector(window.location.hash);
@@ -151,40 +151,53 @@ function renderRemediationCard(rem) {
 
   var dependencySection = "";
   const pendingDeps = (rem.dependency_fixes || []).filter(function (f) { return !f.applied; });
+  const patches = rem.dependency_patches || [];
   if (pendingDeps.length) {
-    const grouped = {};
-    pendingDeps.forEach(function (fix) {
-      if (!grouped[fix.source_file]) grouped[fix.source_file] = [];
-      grouped[fix.source_file].push(fix);
-    });
-
-    const depCards = Object.keys(grouped).map(function (sourceFile) {
-      const fixes = grouped[sourceFile];
-      const items = fixes.map(function (fix, idx) {
-        const fixId = "dep-fix-" + rem.service_id + "-" + idx;
-        return (
-          '<div class="dependency-fix-item">' +
-          "<div><strong>" + escapeHtml(fix.package_name) + "</strong></div>" +
-          '<div class="dependency-fix-row"><span class="label">Current:</span><code>' + escapeHtml(fix.current) + "</code></div>" +
-          '<div class="dependency-fix-row"><span class="label">Recommended:</span><code class="recommended" id="' + fixId + '">' + escapeHtml(fix.recommended) + "</code></div>" +
-          '<div class="dependency-fix-row"><span class="label">Reason:</span><span>' + escapeHtml(fix.reason) + "</span></div>" +
-          '<button class="btn btn-secondary btn-sm copy-dep-btn" data-target="' + fixId + '">Copy Fix</button>' +
-          "</div>"
-        );
+    const packageCards = pendingDeps.map(function (fix) {
+      const cveList = (fix.fixes || fix.cve_ids || []).map(function (cve) {
+        return "<li>" + escapeHtml(cve) + "</li>";
       }).join("");
+      const impact = fix.impact || (fix.fixes || fix.cve_ids || []).length || 1;
 
       return (
-        '<div class="dependency-file-card">' +
-        "<h4>" + escapeHtml(sourceFile) + "</h4>" + items +
+        '<div class="dependency-package-card">' +
+        '<div class="dependency-package-header"><strong>' + escapeHtml(fix.package_name) + "</strong></div>" +
+        '<div class="dependency-fix-row"><span class="label">Current:</span><code>' + escapeHtml(fix.current) + "</code></div>" +
+        '<div class="dependency-fix-row"><span class="label">Recommended:</span><code class="recommended">' + escapeHtml(fix.recommended) + "</code></div>" +
+        '<div class="dependency-fix-row"><span class="label">Fixes:</span><ul class="cve-fix-list">' + cveList + "</ul></div>" +
+        '<div class="dependency-fix-row"><span class="label">Impact:</span><span>' + impact + " vulnerabilit" + (impact === 1 ? "y" : "ies") + " resolved</span></div>" +
         "</div>"
+      );
+    }).join("");
+
+    const patchBlocks = patches.map(function (patch, patchIdx) {
+      const patchId = "dep-patch-" + rem.service_id + "-" + patchIdx;
+      return (
+        '<div class="dependency-patch-block">' +
+        "<h4>" + escapeHtml(patch.source_file) + " Patch</h4>" +
+        '<div class="dependency-patch-compare">' +
+        '<div class="dependency-patch-panel">' +
+        "<h5>Current</h5>" +
+        '<pre class="code-block"><code>' + escapeHtml(patch.current_section) + "</code></pre>" +
+        "</div>" +
+        '<div class="dependency-patch-panel recommended">' +
+        "<h5>Recommended</h5>" +
+        '<pre class="code-block updated-code" id="' + patchId + '"><code>' + escapeHtml(patch.recommended_section) + "</code></pre>" +
+        "</div></div>" +
+        '<div class="btn-group">' +
+        '<button class="btn btn-primary copy-patch-btn" data-target="' + patchId + '">Copy Patch</button>' +
+        '<a href="' + API_BASE + "/service/" + rem.service_id + '/download-dependencies" class="btn btn-secondary download-btn" download>Download ' + escapeHtml(patch.source_file) + "</a>" +
+        "</div></div>"
       );
     }).join("");
 
     dependencySection =
       '<div class="remediation-section">' +
       "<h3>4. Dependency Fixes</h3>" +
-      '<p class="dependency-intro">Update dependency files in your repository. Deployment remains <strong>FAIL</strong> until these fixes are applied and the image is re-scanned.</p>' +
-      '<div class="dependency-fixes-grid">' + depCards + "</div></div>";
+      '<p class="dependency-intro">One recommendation per package using the highest version that resolves all fixable CVEs. Deployment remains <strong>FAIL</strong> until patches are applied and the image is re-scanned.</p>' +
+      '<div class="dependency-packages-grid">' + packageCards + "</div>" +
+      (patchBlocks ? '<div class="dependency-patches">' + patchBlocks + "</div>" : "") +
+      "</div>";
   }
 
   var dockerfileSection = "";
@@ -310,8 +323,8 @@ function renderRemediationCard(rem) {
   );
 }
 
-function bindDependencyCopyButtons() {
-  document.querySelectorAll(".copy-dep-btn").forEach(function (btn) {
+function bindPatchCopyButtons() {
+  document.querySelectorAll(".copy-patch-btn").forEach(function (btn) {
     btn.addEventListener("click", function () {
       const targetId = btn.getAttribute("data-target");
       const el = targetId ? document.getElementById(targetId) : null;
@@ -320,6 +333,15 @@ function bindDependencyCopyButtons() {
         const original = btn.textContent;
         btn.textContent = "Copied!";
         setTimeout(function () { btn.textContent = original; }, 2000);
+      }).catch(function () {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+        btn.textContent = "Copied!";
+        setTimeout(function () { btn.textContent = "Copy Patch"; }, 2000);
       });
     });
   });

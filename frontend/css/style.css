@@ -721,6 +721,67 @@ tbody tr:last-child td {
   margin-bottom: 1rem;
 }
 
+.dependency-packages-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.dependency-package-card {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+}
+
+.dependency-package-header {
+  font-size: 1rem;
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+}
+
+.cve-fix-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.cve-fix-list li {
+  margin: 0.15rem 0;
+}
+
+.dependency-patches {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.dependency-patch-block h4 {
+  font-size: 0.95rem;
+  color: var(--accent);
+  margin-bottom: 0.75rem;
+  font-family: Consolas, monospace;
+}
+
+.dependency-patch-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.dependency-patch-panel h5 {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.dependency-patch-panel.recommended .code-block {
+  border-color: rgba(22, 163, 74, 0.35);
+}
+
 .dependency-fixes-grid {
   display: grid;
   gap: 1rem;
@@ -1091,6 +1152,10 @@ tbody tr:last-child td {
   }
 
   .dockerfile-compare {
+    grid-template-columns: 1fr;
+  }
+
+  .dependency-patch-compare {
     grid-template-columns: 1fr;
   }
 

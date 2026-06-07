@@ -133,6 +133,7 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
                         recommended_fixes=json.dumps(remediation_data["recommended_fixes"]),
                         vulnerabilities_json=json.dumps(remediation_data["vulnerabilities_found"]),
                         dependency_fixes_json=json.dumps(remediation_data.get("dependency_fixes", [])),
+                        dependency_patches_json=json.dumps(remediation_data.get("dependency_patches", [])),
                         current_critical=remediation_data["current_critical"],
                         current_high=remediation_data["current_high"],
                         current_medium=remediation_data["current_medium"],

@@ -11,6 +11,7 @@ from schemas import (
     VulnerabilitySummary,
     RemediationHistoryResponse,
     DependencyFix,
+    DependencyPatch,
 )
 from services.policy_service import PolicyService
 
@@ -50,6 +51,8 @@ def _to_response(remediation: Remediation, service: Service) -> RemediationRespo
     dependency_fixes_raw = json.loads(remediation.dependency_fixes_json or "[]")
     dependency_fixes = [DependencyFix(**f) for f in dependency_fixes_raw]
     pending_dependency_fixes = [f for f in dependency_fixes_raw if not f.get("applied")]
+    patches_raw = json.loads(getattr(remediation, "dependency_patches_json", None) or "[]")
+    dependency_patches = [DependencyPatch(**p) for p in patches_raw]
     status_reason = policy_service.get_status_reason(
         vuln_dicts,
         decision,
@@ -104,6 +107,7 @@ def _to_response(remediation: Remediation, service: Service) -> RemediationRespo
         unfixable_count=classification["unfixable_count"],
         status_reason=status_reason,
         dependency_fixes=dependency_fixes,
+        dependency_patches=dependency_patches,
         pending_dependency_count=len(pending_dependency_fixes),
     )
 
@@ -226,5 +230,34 @@ def download_updated_dockerfile(service_id: int, db: Session = Depends(get_db)):
         media_type="text/plain",
         headers={
             "Content-Disposition": f'attachment; filename="Dockerfile.remediated.{filename}"'
+        },
+    )
+
+
+@router.get("/service/{service_id}/download-dependencies")
+def download_dependency_file(service_id: int, db: Session = Depends(get_db)):
+    service = db.query(Service).filter(Service.id == service_id).first()
+    if not service or not service.remediation:
+        raise HTTPException(status_code=404, detail="Remediation not found")
+
+    remediation = service.remediation
+    patches_raw = json.loads(
+        getattr(remediation, "dependency_patches_json", None) or "[]"
+    )
+    if not patches_raw:
+        raise HTTPException(
+            status_code=400,
+            detail="No dependency patch available to download.",
+        )
+
+    patch = patches_raw[0]
+    source_file = patch.get("source_file", "requirements.txt")
+    content = patch.get("recommended_file_content") or patch.get("recommended_section", "")
+
+    return PlainTextResponse(
+        content=content,
+        media_type="text/plain",
+        headers={
+            "Content-Disposition": f'attachment; filename="{source_file}"'
         },
     )
