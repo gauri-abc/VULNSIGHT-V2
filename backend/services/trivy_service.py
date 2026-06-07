@@ -19,6 +19,8 @@ class TrivyService:
             "--format",
             "json",
             "--quiet",
+            "--severity",
+            "CRITICAL,HIGH,MEDIUM,LOW",
             dockerfile_path,
         ]
 
@@ -29,10 +31,7 @@ class TrivyService:
             timeout=300,
         )
 
-        if result.returncode != 0 and not result.stdout.strip():
-            return []
-
-        raw_output = result.stdout.strip()
+        raw_output = (result.stdout or "").strip()
         if not raw_output:
             return []
 
@@ -55,31 +54,43 @@ class TrivyService:
                 continue
 
             for misconfig in result.get("Misconfigurations") or []:
-                severity = self.SEVERITY_MAP.get(
-                    (misconfig.get("Severity") or "LOW").upper(),
-                    "LOW",
-                )
-                rule_id = misconfig.get("ID") or misconfig.get("AVDID") or ""
-                title = misconfig.get("Title") or rule_id or "Dockerfile Misconfiguration"
-                description = misconfig.get("Description") or misconfig.get("Message") or title
-                recommendation = (
-                    misconfig.get("Resolution")
-                    or misconfig.get("PrimaryURL")
-                    or "Review and remediate the Dockerfile misconfiguration."
-                )
+                findings.append(self._misconfig_to_finding(misconfig))
 
-                findings.append(
-                    {
-                        "severity": severity,
-                        "rule": title,
-                        "description": description[:2000],
-                        "recommendation": recommendation[:2000],
-                        "source": "trivy",
-                        "rule_id": rule_id,
-                    }
-                )
+            for cause in result.get("Causes") or []:
+                if isinstance(cause, dict) and cause.get("Misconfigurations"):
+                    for misconfig in cause.get("Misconfigurations") or []:
+                        findings.append(self._misconfig_to_finding(misconfig))
 
         return findings
+
+    def _misconfig_to_finding(self, misconfig: dict) -> dict:
+        severity = self.SEVERITY_MAP.get(
+            (misconfig.get("Severity") or "LOW").upper(),
+            "LOW",
+        )
+        rule_id = misconfig.get("ID") or misconfig.get("AVDID") or ""
+        title = misconfig.get("Title") or rule_id or "Dockerfile Misconfiguration"
+        description = misconfig.get("Description") or misconfig.get("Message") or ""
+        if not description and isinstance(misconfig.get("CauseMetadata"), dict):
+            lines = misconfig["CauseMetadata"].get("Code", {}).get("Lines", [])
+            if lines and isinstance(lines[0], dict):
+                description = lines[0].get("Content", "")
+        if not description:
+            description = title
+        recommendation = (
+            misconfig.get("Resolution")
+            or misconfig.get("PrimaryURL")
+            or "Review and remediate the Dockerfile misconfiguration."
+        )
+
+        return {
+            "severity": severity,
+            "rule": title,
+            "description": str(description)[:2000],
+            "recommendation": str(recommendation)[:2000],
+            "source": "trivy",
+            "rule_id": rule_id,
+        }
 
     def scan_image(self, image_name: str) -> list[dict]:
         cmd = [

@@ -145,9 +145,35 @@ function renderRemediationCard(rem) {
     .map(function (f) { return "<li>" + escapeHtml(f) + "</li>"; })
     .join("");
 
+  const dockerFindings = rem.dockerfile_security_findings || [];
+  var dockerSecuritySection = "";
+  if (dockerFindings.length) {
+    const findingRows = dockerFindings.map(function (f) {
+      return (
+        "<tr>" +
+        '<td><span class="severity-badge ' + f.severity.toLowerCase() + '">' + f.severity + "</span></td>" +
+        "<td><strong>" + escapeHtml(f.rule) + "</strong></td>" +
+        "<td>" + escapeHtml(f.description || "-") + "</td>" +
+        "<td>" + escapeHtml(f.recommendation || "-") + "</td>" +
+        "</tr>"
+      );
+    }).join("");
+
+    dockerSecuritySection =
+      '<div class="remediation-section">' +
+      "<h3>2. Dockerfile Security Findings</h3>" +
+      '<p class="dependency-intro">' + dockerFindings.length + " misconfiguration(s) detected by Trivy config scan and VULNSIGHT security rules.</p>" +
+      '<div class="table-container"><table><thead><tr>' +
+      "<th>Severity</th><th>Rule</th><th>Description</th><th>Recommendation</th>" +
+      "</tr></thead><tbody>" + findingRows + "</tbody></table></div></div>";
+  }
+
   var dependencySection = "";
   const pendingDeps = (rem.dependency_fixes || []).filter(function (f) { return !f.applied; });
   const patches = rem.dependency_patches || [];
+  const sectionOffset = dockerFindings.length ? 1 : 0;
+  const rootCauseSectionNum = 2 + sectionOffset;
+  const guidanceSectionNum = 3 + sectionOffset;
   if (pendingDeps.length) {
     const packageCards = pendingDeps.map(function (fix) {
       const cveList = (fix.fixes || fix.cve_ids || []).map(function (cve) {
@@ -189,7 +215,7 @@ function renderRemediationCard(rem) {
 
     dependencySection =
       '<div class="remediation-section">' +
-      "<h3>4. Dependency Fixes</h3>" +
+      "<h3>" + (3 + sectionOffset) + ". Dependency Fixes</h3>" +
       '<p class="dependency-intro">One recommendation per package using the highest version that resolves all fixable CVEs. Deployment remains <strong>FAIL</strong> until patches are applied and the image is re-scanned.</p>' +
       '<div class="dependency-packages-grid">' + packageCards + "</div>" +
       (patchBlocks ? '<div class="dependency-patches">' + patchBlocks + "</div>" : "") +
@@ -197,7 +223,7 @@ function renderRemediationCard(rem) {
   }
 
   var dockerfileSection = "";
-  const dockerfileSectionNum = pendingDeps.length ? "5" : "4";
+  const dockerfileSectionNum = String(3 + sectionOffset + (pendingDeps.length ? 1 : 0));
   if (isAvailable && rem.show_generate_fix && rem.updated_dockerfile) {
     dockerfileSection =
       '<div class="remediation-section">' +
@@ -269,7 +295,7 @@ function renderRemediationCard(rem) {
     "</div>" +
 
     '<div class="remediation-section">' +
-    "<h3>1. " + (isAvailable ? "Vulnerabilities Found" : "Remaining Vulnerabilities") + "</h3>" +
+    "<h3>1. " + (isAvailable ? "Dependency & Image Vulnerabilities" : "Remaining Vulnerabilities") + "</h3>" +
     '<div class="table-container">' +
     "<table><thead><tr>" +
     "<th>CVE ID</th><th>Severity</th><th>Package</th><th>Installed</th><th>Fixed Version</th><th>Source</th><th>Type</th>" +
@@ -278,15 +304,16 @@ function renderRemediationCard(rem) {
     "</tbody></table></div></div>" +
 
     '<div class="remediation-section">' +
-    "<h3>2. " + (isAvailable ? "Root Cause Analysis" : "Root Cause — Why Vulnerabilities Still Exist") + "</h3>" +
+    "<h3>" + rootCauseSectionNum + ". " + (isAvailable ? "Root Cause Analysis" : "Root Cause — Why Vulnerabilities Still Exist") + "</h3>" +
     '<ul class="remediation-list">' + rootCauses + "</ul></div>" +
 
     '<div class="remediation-section">' +
-    "<h3>3. " + (isAvailable ? "Recommended Fixes" : "Guidance") + "</h3>" +
+    "<h3>" + guidanceSectionNum + ". " + (isAvailable ? "Recommended Fixes" : "Guidance") + "</h3>" +
     '<ul class="remediation-list fixes-list">' + fixes + "</ul>" +
     (isExhausted ? '<p class="exhausted-message">No additional Dockerfile remediation available.</p>' : "") +
     "</div>" +
 
+    dockerSecuritySection +
     dependencySection +
     dockerfileSection +
 

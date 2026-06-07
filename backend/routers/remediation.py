@@ -12,6 +12,7 @@ from schemas import (
     RemediationHistoryResponse,
     DependencyFix,
     DependencyPatch,
+    DockerSecurityFindingResponse,
 )
 from services.policy_service import PolicyService
 
@@ -62,11 +63,36 @@ def _to_response(remediation: Remediation, service: Service) -> RemediationRespo
     pending_dependency_fixes = [f for f in dependency_fixes_raw if not f.get("applied")]
     patches_raw = json.loads(getattr(remediation, "dependency_patches_json", None) or "[]")
     dependency_patches = [DependencyPatch(**p) for p in patches_raw]
+    stored_findings = json.loads(getattr(remediation, "dockerfile_findings_json", None) or "[]")
+    if not stored_findings:
+        stored_findings = [
+            {
+                "severity": f.severity,
+                "rule": f.rule,
+                "description": f.description or "",
+                "recommendation": f.recommendation or "",
+                "source": f.source or "trivy",
+                "rule_id": f.rule_id or "",
+            }
+            for f in service.docker_security_findings
+        ]
+    dockerfile_security_findings = [DockerSecurityFindingResponse(**f) for f in stored_findings]
+    dockerfile_findings = [
+        {
+            "severity": f.severity,
+            "rule": f.rule,
+            "description": f.description,
+            "recommendation": f.recommendation,
+            "source": f.source,
+            "rule_id": f.rule_id,
+        }
+        for f in dockerfile_security_findings
+    ]
     risk_accepted = policy_service.is_risk_accepted(
         vuln_dicts,
         remediation_state=state,
         pending_dependency_fixes=pending_dependency_fixes,
-    )
+    ) and not policy_service.has_blocking_dockerfile_findings(dockerfile_findings)
     status_reason = policy_service.get_status_reason(
         vuln_dicts,
         decision,
@@ -124,6 +150,7 @@ def _to_response(remediation: Remediation, service: Service) -> RemediationRespo
         dependency_fixes=dependency_fixes,
         dependency_patches=dependency_patches,
         pending_dependency_count=len(pending_dependency_fixes),
+        dockerfile_security_findings=dockerfile_security_findings,
         risk_accepted=risk_accepted,
     )
 

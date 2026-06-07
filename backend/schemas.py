@@ -209,6 +209,7 @@ class RemediationResponse(BaseModel):
     dependency_fixes: list[DependencyFix] = []
     dependency_patches: list[DependencyPatch] = []
     pending_dependency_count: int = 0
+    dockerfile_security_findings: list[DockerSecurityFindingResponse] = []
     risk_accepted: bool = False
 
 

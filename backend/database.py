@@ -24,6 +24,7 @@ SCAN_HISTORY_COLUMN_MIGRATIONS = [
 ]
 
 REMEDIATION_COLUMN_MIGRATIONS = [
+    ("dockerfile_findings_json", "TEXT DEFAULT '[]'"),
     ("dependency_patches_json", "TEXT DEFAULT '[]'"),
     ("dependency_fixes_json", "TEXT DEFAULT '[]'"),
     ("remediation_state", "VARCHAR(32) DEFAULT 'REMEDIATION_AVAILABLE'"),

@@ -1,6 +1,7 @@
 import re
 
 from services.dependency_service import DependencyService
+from services.dockerfile_security_service import DockerfileSecurityService
 from services.policy_service import (
     PolicyService,
     REMEDIATION_AVAILABLE,
@@ -61,6 +62,7 @@ class RemediationService:
         self.scoring_service = ScoringService()
         self.policy_service = PolicyService()
         self.dependency_service = DependencyService()
+        self.dockerfile_security_service = DockerfileSecurityService()
 
     def generate_remediation(
         self,
@@ -71,7 +73,9 @@ class RemediationService:
         previous_remediation: dict | None = None,
         baseline: dict | None = None,
         build_context: str = "",
+        dockerfile_findings: list[dict] | None = None,
     ) -> dict:
+        dockerfile_findings = dockerfile_findings or []
         annotated_vulns = self.dependency_service.annotate_vulnerabilities(
             vulnerabilities,
             build_context,
@@ -91,7 +95,9 @@ class RemediationService:
             dependency_fixes, build_context
         )
 
-        current_counts = self.trivy_service.count_by_severity(vulnerabilities)
+        vuln_counts = self.trivy_service.count_by_severity(vulnerabilities)
+        docker_counts = self.policy_service.count_dockerfile_findings(dockerfile_findings)
+        current_counts = self.scoring_service.merge_counts(vuln_counts, docker_counts)
         classification = self.policy_service.classify_vulnerabilities(vulnerabilities)
         current_score = self.scoring_service.calculate_score(current_counts)
         vuln_summary = self._build_vulnerability_summary(annotated_vulns)
@@ -106,7 +112,7 @@ class RemediationService:
         }
 
         candidate_updated = self._generate_updated_dockerfile(
-            dockerfile_content, annotated_vulns
+            dockerfile_content, annotated_vulns, dockerfile_findings
         )
         previous_updated = (
             (previous_remediation or {}).get("updated_dockerfile") or ""
@@ -137,15 +143,21 @@ class RemediationService:
                 service_name,
                 dockerfile_path,
                 dependency_fixes,
+                dockerfile_findings,
             )
             recommended_fixes = self._generate_recommended_fixes(
-                annotated_vulns, dockerfile_content, root_causes, dependency_fixes
+                annotated_vulns,
+                dockerfile_content,
+                root_causes,
+                dependency_fixes,
+                dockerfile_findings,
             )
 
         current_decision = self.policy_service.evaluate_deployment(
             vulnerabilities,
             remediation_state=state,
             pending_dependency_fixes=pending_dependency_fixes,
+            dockerfile_findings=dockerfile_findings,
         )
 
         estimated_counts = (
@@ -161,6 +173,7 @@ class RemediationService:
         estimated_decision = self.policy_service.evaluate_deployment(
             estimated_vulns,
             remediation_state=REMEDIATION_EXHAUSTED if state != REMEDIATION_AVAILABLE else None,
+            dockerfile_findings=[] if state != REMEDIATION_AVAILABLE else dockerfile_findings,
         )
 
         original_total = sum(original_counts.values())
@@ -201,11 +214,13 @@ class RemediationService:
             "dependency_fixes": dependency_fixes,
             "dependency_patches": dependency_patches,
             "pending_dependency_count": len(pending_dependency_fixes),
+            "dockerfile_security_findings": dockerfile_findings,
             "status_reason": self.policy_service.get_status_reason(
                 vulnerabilities,
                 current_decision,
                 state,
                 pending_dependency_fixes=pending_dependency_fixes,
+                dockerfile_findings=dockerfile_findings,
             ),
             "original_score": original_score,
             "score_after_remediation": score_after,
@@ -277,7 +292,7 @@ class RemediationService:
         if has_dockerfile_fixes:
             return (
                 REMEDIATION_AVAILABLE,
-                "Dockerfile fixes exist and have not been applied.",
+                "Dockerfile security remediations exist and have not been applied.",
                 True,
             )
 
@@ -465,10 +480,22 @@ class RemediationService:
         service_name: str,
         dockerfile_path: str,
         dependency_fixes: list[dict],
+        dockerfile_findings: list[dict],
     ) -> list[str]:
         causes = []
         classification = self.policy_service.classify_vulnerabilities(vulnerabilities)
         pending_deps = self.dependency_service.get_pending_dependency_fixes(dependency_fixes)
+
+        if dockerfile_findings:
+            high_critical = [
+                f for f in dockerfile_findings
+                if f.get("severity") in ("CRITICAL", "HIGH", "MEDIUM")
+            ]
+            causes.append(
+                f"{len(dockerfile_findings)} Dockerfile security misconfigurations detected "
+                f"({len(high_critical)} HIGH/CRITICAL/MEDIUM). "
+                f"Includes root user, missing hardening, or insecure instructions."
+            )
 
         if pending_deps:
             dep_files = sorted({f["source_file"] for f in pending_deps})
@@ -512,9 +539,18 @@ class RemediationService:
         dockerfile_content: str,
         root_causes: list[str],
         dependency_fixes: list[dict],
+        dockerfile_findings: list[dict],
     ) -> list[str]:
         fixes = []
         pending_deps = self.dependency_service.get_pending_dependency_fixes(dependency_fixes)
+
+        if dockerfile_findings:
+            for finding in dockerfile_findings[:6]:
+                fixes.append(
+                    f"[{finding.get('severity', 'LOW')}] {finding.get('rule', 'Finding')}: "
+                    f"{finding.get('recommendation', 'Apply Dockerfile hardening.')}"
+                )
+            fixes.append("Apply the updated security-hardened Dockerfile, then re-scan.")
 
         if pending_deps:
             for dep_fix in pending_deps[:5]:
@@ -539,7 +575,7 @@ class RemediationService:
             )
             fixes.append("Pin base image to a specific patched version tag.")
 
-        if not pending_deps and not dockerfile_vulns:
+        if not pending_deps and not dockerfile_vulns and not dockerfile_findings:
             fixes.append("Re-scan after applying available fixes.")
 
         return fixes
@@ -559,8 +595,13 @@ class RemediationService:
         return bool(from_match and "alpine" in from_match.group(1).lower())
 
     def _has_dockerfile_relevant_fixes(
-        self, dockerfile_content: str, vulnerabilities: list[dict]
+        self,
+        dockerfile_content: str,
+        vulnerabilities: list[dict],
+        dockerfile_findings: list[dict],
     ) -> bool:
+        if self.dockerfile_security_service.has_pending_findings(dockerfile_findings):
+            return True
         return any(
             self.policy_service.is_fixable(v)
             and v.get("remediation_type") in ("OS_PACKAGE", "BASE_IMAGE", "DOCKERFILE")
@@ -568,10 +609,22 @@ class RemediationService:
         )
 
     def _generate_updated_dockerfile(
-        self, dockerfile_content: str, vulnerabilities: list[dict]
+        self,
+        dockerfile_content: str,
+        vulnerabilities: list[dict],
+        dockerfile_findings: list[dict],
     ) -> str:
-        if not self._has_dockerfile_relevant_fixes(dockerfile_content, vulnerabilities):
+        if not self._has_dockerfile_relevant_fixes(
+            dockerfile_content, vulnerabilities, dockerfile_findings
+        ):
             return ""
+
+        if self.dockerfile_security_service.has_pending_findings(dockerfile_findings):
+            hardened = self.dockerfile_security_service.apply_remediations(
+                dockerfile_content, dockerfile_findings
+            )
+            if hardened and not self._dockerfiles_match(dockerfile_content, hardened):
+                return hardened
 
         lines = dockerfile_content.splitlines()
         result_lines = []
@@ -688,7 +741,7 @@ class RemediationService:
     ) -> bool:
         if decision == "FAIL":
             return True
-        if self.policy_service.has_blocking_dockerfile_findings(dockerfile_findings):
+        if dockerfile_findings:
             return True
         classification = self.policy_service.classify_vulnerabilities(vulnerabilities)
         return classification["fixable_count"] > 0 or classification["unfixable_critical"] > 0

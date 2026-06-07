@@ -202,6 +202,7 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
                     previous_remediation=previous_remediation,
                     baseline=baseline,
                     build_context=image_info.get("build_context", clone_path),
+                    dockerfile_findings=dockerfile_findings,
                 )
 
                 remediation_state = remediation_data["remediation_state"]
@@ -221,6 +222,9 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
                         vulnerabilities_json=json.dumps(remediation_data["vulnerabilities_found"]),
                         dependency_fixes_json=json.dumps(remediation_data.get("dependency_fixes", [])),
                         dependency_patches_json=json.dumps(remediation_data.get("dependency_patches", [])),
+                        dockerfile_findings_json=json.dumps(
+                            remediation_data.get("dockerfile_security_findings", [])
+                        ),
                         current_critical=remediation_data["current_critical"],
                         current_high=remediation_data["current_high"],
                         current_medium=remediation_data["current_medium"],

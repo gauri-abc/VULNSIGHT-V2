@@ -51,10 +51,21 @@ class PolicyService:
     def has_blocking_dockerfile_findings(self, dockerfile_findings: list[dict] | None) -> bool:
         if not dockerfile_findings:
             return False
+        blocking_severities = {"CRITICAL", "HIGH", "MEDIUM"}
         return any(
-            finding.get("severity") in ("CRITICAL", "HIGH")
+            finding.get("severity") in blocking_severities
             for finding in dockerfile_findings
         )
+
+    def count_dockerfile_findings(self, dockerfile_findings: list[dict] | None) -> dict:
+        counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        for finding in dockerfile_findings or []:
+            severity = finding.get("severity", "LOW").upper()
+            if severity in counts:
+                counts[severity] += 1
+            else:
+                counts["LOW"] += 1
+        return counts
 
     def evaluate_deployment(
         self,
@@ -173,11 +184,11 @@ class PolicyService:
 
         blocking_docker = [
             f for f in (dockerfile_findings or [])
-            if isinstance(f, dict) and f.get("severity") in ("CRITICAL", "HIGH")
+            if isinstance(f, dict) and f.get("severity") in ("CRITICAL", "HIGH", "MEDIUM")
         ]
         if blocking_docker:
             return (
-                f"{len(blocking_docker)} Dockerfile security findings (HIGH/CRITICAL) "
+                f"{len(blocking_docker)} Dockerfile security misconfigurations "
                 f"must be remediated before deployment."
             )
 
