@@ -13,6 +13,10 @@ engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+VULNERABILITY_COLUMN_MIGRATIONS = [
+    ("category", "VARCHAR(32) DEFAULT 'image'"),
+]
+
 SCAN_HISTORY_COLUMN_MIGRATIONS = [
     ("fixable_count", "INTEGER DEFAULT 0"),
     ("unfixable_count", "INTEGER DEFAULT 0"),
@@ -126,10 +130,34 @@ def migrate_schema():
                 )
             )
 
+    if "vulnerabilities" in table_names:
+        existing_cols = {col["name"] for col in inspector.get_columns("vulnerabilities")}
+        with engine.begin() as conn:
+            for col_name, col_def in VULNERABILITY_COLUMN_MIGRATIONS:
+                if col_name not in existing_cols:
+                    conn.execute(
+                        text(f"ALTER TABLE vulnerabilities ADD COLUMN {col_name} {col_def}")
+                    )
+            conn.execute(
+                text(
+                    "UPDATE vulnerabilities SET category = 'image' "
+                    "WHERE category IS NULL OR category = ''"
+                )
+            )
+
 
 def init_db():
     wait_for_db()
-    from models import Repository, Service, Vulnerability, ScanHistory, Remediation, RemediationHistory, Alert  # noqa: F401
+    from models import (  # noqa: F401
+        Repository,
+        Service,
+        Vulnerability,
+        DockerSecurityFinding,
+        ScanHistory,
+        Remediation,
+        RemediationHistory,
+        Alert,
+    )
 
     Base.metadata.create_all(bind=engine)
     migrate_schema()

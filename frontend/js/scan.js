@@ -86,6 +86,9 @@ function displayResults(data) {
 
   document.getElementById("result-fixable").textContent = data.fixable_count || 0;
   document.getElementById("result-unfixable").textContent = data.unfixable_count || 0;
+  document.getElementById("result-dependency-findings").textContent = data.dependency_findings || 0;
+  document.getElementById("result-dockerfile-findings").textContent = data.dockerfile_findings || 0;
+  document.getElementById("result-image-findings").textContent = data.image_findings || 0;
 
   const decisionEl = document.getElementById("result-decision");
   decisionEl.className = "decision-badges";

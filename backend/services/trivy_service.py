@@ -12,6 +12,75 @@ class TrivyService:
         "UNKNOWN": "LOW",
     }
 
+    def scan_dockerfile(self, dockerfile_path: str) -> list[dict]:
+        cmd = [
+            "trivy",
+            "config",
+            "--format",
+            "json",
+            "--quiet",
+            dockerfile_path,
+        ]
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+
+        if result.returncode != 0 and not result.stdout.strip():
+            return []
+
+        raw_output = result.stdout.strip()
+        if not raw_output:
+            return []
+
+        try:
+            data = json.loads(raw_output)
+        except json.JSONDecodeError:
+            return []
+
+        return self._parse_config_output(data)
+
+    def _parse_config_output(self, data: Any) -> list[dict]:
+        findings = []
+        results = data if isinstance(data, list) else data.get("Results", [])
+
+        if not isinstance(results, list):
+            results = [results] if results else []
+
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+
+            for misconfig in result.get("Misconfigurations") or []:
+                severity = self.SEVERITY_MAP.get(
+                    (misconfig.get("Severity") or "LOW").upper(),
+                    "LOW",
+                )
+                rule_id = misconfig.get("ID") or misconfig.get("AVDID") or ""
+                title = misconfig.get("Title") or rule_id or "Dockerfile Misconfiguration"
+                description = misconfig.get("Description") or misconfig.get("Message") or title
+                recommendation = (
+                    misconfig.get("Resolution")
+                    or misconfig.get("PrimaryURL")
+                    or "Review and remediate the Dockerfile misconfiguration."
+                )
+
+                findings.append(
+                    {
+                        "severity": severity,
+                        "rule": title,
+                        "description": description[:2000],
+                        "recommendation": recommendation[:2000],
+                        "source": "trivy",
+                        "rule_id": rule_id,
+                    }
+                )
+
+        return findings
+
     def scan_image(self, image_name: str) -> list[dict]:
         cmd = [
             "trivy",

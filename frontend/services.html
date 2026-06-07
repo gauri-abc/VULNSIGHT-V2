@@ -27,7 +27,7 @@
   <div class="container">
     <div class="page-header">
       <h1>Service Analysis</h1>
-      <p>Per-service vulnerability breakdown from the latest scan</p>
+      <p>Per-service security breakdown: dependencies, Dockerfile config, and container image findings</p>
     </div>
 
     <div class="table-container card" style="padding: 0;">
@@ -41,21 +41,25 @@
             <th>High</th>
             <th>Medium</th>
             <th>Low</th>
-            <th>Fixable</th>
-            <th>Unfixable</th>
+            <th>Deps</th>
+            <th>Dockerfile</th>
+            <th>Image</th>
             <th>Score</th>
             <th>Status</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="services-table-body">
           <tr>
-            <td colspan="11" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+            <td colspan="13" style="text-align: center; color: var(--text-muted); padding: 2rem;">
               No services found. Run a security scan first.
             </td>
           </tr>
         </tbody>
       </table>
     </div>
+
+    <div id="security-breakdown-container"></div>
   </div>
 
   <footer class="footer">

@@ -15,9 +15,22 @@ class ScoringService:
         return max(0.0, round(score, 2))
 
     def calculate_service_score(self, vulnerabilities: list[dict]) -> float:
+        counts = self.count_severities(vulnerabilities)
+        return self.calculate_score(counts)
+
+    def count_severities(self, items: list[dict]) -> dict:
         counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
-        for vuln in vulnerabilities:
-            severity = vuln.get("severity", "LOW").upper()
+        for item in items:
+            severity = item.get("severity", "LOW").upper()
             if severity in counts:
                 counts[severity] += 1
-        return self.calculate_score(counts)
+            else:
+                counts["LOW"] += 1
+        return counts
+
+    def merge_counts(self, *count_dicts: dict) -> dict:
+        merged = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        for counts in count_dicts:
+            for severity in merged:
+                merged[severity] += counts.get(severity, 0)
+        return merged

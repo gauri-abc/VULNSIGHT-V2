@@ -4,7 +4,15 @@ from sqlalchemy.orm import Session
 import json
 
 from database import get_db
-from models import Repository, Service, Vulnerability, ScanHistory, Remediation, RemediationHistory
+from models import (
+    Repository,
+    Service,
+    Vulnerability,
+    DockerSecurityFinding,
+    ScanHistory,
+    Remediation,
+    RemediationHistory,
+)
 from schemas import RepositoryScanRequest, RepositoryScanResponse
 from services.github_service import GitHubService
 from services.docker_service import DockerService
@@ -13,6 +21,8 @@ from services.scoring_service import ScoringService
 from services.policy_service import PolicyService
 from services.alert_service import AlertService
 from services.remediation_service import RemediationService
+from services.dockerfile_security_service import DockerfileSecurityService
+from services.dependency_service import DependencyService
 
 router = APIRouter(prefix="/api", tags=["scan"])
 
@@ -23,6 +33,8 @@ scoring_service = ScoringService()
 policy_service = PolicyService()
 alert_service = AlertService()
 remediation_service = RemediationService()
+dockerfile_security_service = DockerfileSecurityService()
+dependency_service = DependencyService()
 
 
 @router.post("/repository-scan", response_model=RepositoryScanResponse)
@@ -40,6 +52,17 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
                 detail="No Dockerfiles found in the repository.",
             )
 
+        dockerfile_findings_map = {}
+        for dockerfile_info in dockerfiles:
+            dockerfile_full = dockerfile_info.get("dockerfile_full_path", "")
+            dockerfile_content = ""
+            if dockerfile_full:
+                with open(dockerfile_full, "r", encoding="utf-8", errors="replace") as df:
+                    dockerfile_content = df.read()
+            dockerfile_findings_map[dockerfile_info["dockerfile_path"]] = (
+                dockerfile_security_service.scan(dockerfile_full, dockerfile_content)
+            )
+
         built_images = docker_service.build_all_images(clone_path, dockerfiles)
 
         repository = Repository(name=repo_name, repo_url=request.repo_url)
@@ -48,24 +71,55 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
 
         total_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
         all_vulnerabilities = []
+        all_dockerfile_findings = []
+        dependency_findings_total = 0
+        image_findings_total = 0
+        dockerfile_findings_total = 0
         service_policy_data = []
         pending_remediation_history = []
 
         for image_info in built_images:
-            vulnerabilities = trivy_service.scan_image(image_info["image_name"])
-            counts = trivy_service.count_by_severity(vulnerabilities)
-            classification = policy_service.classify_vulnerabilities(vulnerabilities)
-
-            for key in total_counts:
-                total_counts[key] += counts.get(key, 0)
-
-            all_vulnerabilities.extend(vulnerabilities)
-
+            image_vulnerabilities = trivy_service.scan_image(image_info["image_name"])
             dockerfile_content = ""
             dockerfile_full = image_info.get("dockerfile_full_path", "")
             if dockerfile_full:
                 with open(dockerfile_full, "r", encoding="utf-8", errors="replace") as df:
                     dockerfile_content = df.read()
+
+            dockerfile_findings = dockerfile_findings_map.get(
+                image_info["dockerfile_path"], []
+            )
+            all_dockerfile_findings.extend(dockerfile_findings)
+            dockerfile_findings_total += len(dockerfile_findings)
+
+            annotated_vulns = dependency_service.annotate_vulnerabilities(
+                image_vulnerabilities,
+                image_info.get("build_context", clone_path),
+                dockerfile_content,
+                policy_service.is_fixable,
+            )
+            dependency_vulnerabilities = [
+                v for v in annotated_vulns if v.get("remediation_type") == "DEPENDENCY"
+            ]
+            container_image_vulnerabilities = [
+                v for v in annotated_vulns if v.get("remediation_type") != "DEPENDENCY"
+            ]
+            vulnerabilities = image_vulnerabilities
+            dependency_findings_total += len(dependency_vulnerabilities)
+            image_findings_total += len(container_image_vulnerabilities)
+
+            dep_counts = scoring_service.count_severities(dependency_vulnerabilities)
+            image_counts = scoring_service.count_severities(container_image_vulnerabilities)
+            docker_counts = scoring_service.count_severities(dockerfile_findings)
+            combined_counts = scoring_service.merge_counts(
+                dep_counts, image_counts, docker_counts
+            )
+            classification = policy_service.classify_vulnerabilities(vulnerabilities)
+
+            for key in total_counts:
+                total_counts[key] += combined_counts.get(key, 0)
+
+            all_vulnerabilities.extend(vulnerabilities)
 
             service = Service(
                 repository_id=repository.id,
@@ -76,7 +130,7 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
             db.add(service)
             db.flush()
 
-            for vuln in vulnerabilities:
+            for vuln in dependency_vulnerabilities:
                 db.add(
                     Vulnerability(
                         service_id=service.id,
@@ -86,14 +140,47 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
                         installed_version=vuln["installed_version"],
                         fixed_version=vuln["fixed_version"],
                         description=vuln["description"],
+                        category="dependency",
+                    )
+                )
+
+            for vuln in container_image_vulnerabilities:
+                db.add(
+                    Vulnerability(
+                        service_id=service.id,
+                        cve_id=vuln["cve_id"],
+                        severity=vuln["severity"],
+                        package_name=vuln["package_name"],
+                        installed_version=vuln["installed_version"],
+                        fixed_version=vuln["fixed_version"],
+                        description=vuln["description"],
+                        category="image",
+                    )
+                )
+
+            for finding in dockerfile_findings:
+                db.add(
+                    DockerSecurityFinding(
+                        service_id=service.id,
+                        severity=finding["severity"],
+                        rule=finding["rule"],
+                        description=finding.get("description", ""),
+                        recommendation=finding.get("recommendation", ""),
+                        source=finding.get("source", "trivy"),
+                        rule_id=finding.get("rule_id", ""),
                     )
                 )
 
             remediation_state = None
             remediation_data = None
-            service_decision = policy_service.evaluate_deployment(vulnerabilities)
+            service_decision = policy_service.evaluate_deployment(
+                vulnerabilities,
+                dockerfile_findings=dockerfile_findings,
+            )
 
-            if remediation_service.needs_remediation_record(vulnerabilities, service_decision):
+            if remediation_service.needs_remediation_record(
+                vulnerabilities, service_decision, dockerfile_findings
+            ):
                 prev_record = remediation_service.find_previous_remediation(
                     db, request.repo_url, image_info["dockerfile_path"]
                 )
@@ -177,6 +264,7 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
                     "vulnerabilities": vulnerabilities,
                     "remediation_state": remediation_state,
                     "pending_dependency_fixes": pending_deps,
+                    "dockerfile_findings": dockerfile_findings,
                 }
             )
 
@@ -202,6 +290,7 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
             service_policy_data[0].get("remediation_state") if len(service_policy_data) == 1 else None,
             pending_dependency_fixes=all_pending_deps,
             remediation_states=remediation_states or None,
+            dockerfile_findings=all_dockerfile_findings,
         )
 
         scan_record = ScanHistory(
@@ -265,6 +354,9 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
             unfixable_count=repo_classification["unfixable_count"],
             risk_accepted=risk_accepted,
             status_reason=status_reason,
+            dependency_findings=dependency_findings_total,
+            dockerfile_findings=dockerfile_findings_total,
+            image_findings=image_findings_total,
         )
 
     except HTTPException:

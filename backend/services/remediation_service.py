@@ -680,8 +680,15 @@ class RemediationService:
             "original_low": first.current_low,
         }
 
-    def needs_remediation_record(self, vulnerabilities: list[dict], decision: str) -> bool:
+    def needs_remediation_record(
+        self,
+        vulnerabilities: list[dict],
+        decision: str,
+        dockerfile_findings: list[dict] | None = None,
+    ) -> bool:
         if decision == "FAIL":
+            return True
+        if self.policy_service.has_blocking_dockerfile_findings(dockerfile_findings):
             return True
         classification = self.policy_service.classify_vulnerabilities(vulnerabilities)
         return classification["fixable_count"] > 0 or classification["unfixable_critical"] > 0

@@ -46,6 +46,15 @@ def _to_response(remediation: Remediation, service: Service) -> RemediationRespo
         }
         for v in vulns_raw
     ]
+    dockerfile_findings = [
+        {
+            "severity": f.severity,
+            "rule": f.rule,
+            "description": f.description or "",
+            "recommendation": f.recommendation or "",
+        }
+        for f in service.docker_security_findings
+    ]
     classification = policy_service.classify_vulnerabilities(vuln_dicts)
     decision = remediation.current_decision or "FAIL"
     dependency_fixes_raw = json.loads(remediation.dependency_fixes_json or "[]")
@@ -63,6 +72,7 @@ def _to_response(remediation: Remediation, service: Service) -> RemediationRespo
         decision,
         state,
         pending_dependency_fixes=pending_dependency_fixes,
+        dockerfile_findings=dockerfile_findings,
     )
 
     return RemediationResponse(

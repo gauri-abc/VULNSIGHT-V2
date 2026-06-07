@@ -8,6 +8,15 @@ class RepositoryScanRequest(BaseModel):
     repo_url: str
 
 
+class DockerSecurityFindingResponse(BaseModel):
+    severity: str
+    rule: str
+    description: str
+    recommendation: str
+    source: str = "trivy"
+    rule_id: str = ""
+
+
 class RepositoryScanResponse(BaseModel):
     scan_id: int
     repository: str
@@ -23,6 +32,9 @@ class RepositoryScanResponse(BaseModel):
     unfixable_count: int = 0
     risk_accepted: bool = False
     status_reason: str = ""
+    dependency_findings: int = 0
+    dockerfile_findings: int = 0
+    image_findings: int = 0
 
 
 class ServiceResponse(BaseModel):
@@ -41,6 +53,9 @@ class ServiceResponse(BaseModel):
     status_reason: str = ""
     remediation_state: Optional[str] = None
     risk_accepted: bool = False
+    dependency_findings: int = 0
+    dockerfile_findings: int = 0
+    image_findings: int = 0
 
 
 class ScanHistoryResponse(BaseModel):
@@ -110,6 +125,19 @@ class VulnerabilitySummary(BaseModel):
     classification: Optional[str] = None
     remediation_source: Optional[str] = None
     remediation_type: Optional[str] = None
+
+
+class SecurityBreakdownResponse(BaseModel):
+    dependency_vulnerabilities: list[VulnerabilitySummary]
+    dockerfile_security_findings: list[DockerSecurityFindingResponse]
+    image_vulnerabilities: list[VulnerabilitySummary]
+    dependency_counts: dict = {}
+    dockerfile_counts: dict = {}
+    image_counts: dict = {}
+    combined_score: float = 100.0
+    dependency_score: float = 100.0
+    dockerfile_score: float = 100.0
+    image_score: float = 100.0
 
 
 class DependencyFix(BaseModel):

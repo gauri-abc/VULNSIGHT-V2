@@ -48,12 +48,24 @@ class PolicyService:
             "total_high": count_severity(fixable + unfixable, "HIGH"),
         }
 
+    def has_blocking_dockerfile_findings(self, dockerfile_findings: list[dict] | None) -> bool:
+        if not dockerfile_findings:
+            return False
+        return any(
+            finding.get("severity") in ("CRITICAL", "HIGH")
+            for finding in dockerfile_findings
+        )
+
     def evaluate_deployment(
         self,
         vulnerabilities: list[dict],
         remediation_state: str | None = None,
         pending_dependency_fixes: list[dict] | None = None,
+        dockerfile_findings: list[dict] | None = None,
     ) -> str:
+        if self.has_blocking_dockerfile_findings(dockerfile_findings):
+            return "FAIL"
+
         if not vulnerabilities:
             return "PASS"
 
@@ -110,6 +122,7 @@ class PolicyService:
         all_vulnerabilities = []
         remediation_states = []
         all_pending_deps = []
+        all_dockerfile_findings = []
 
         for service in services:
             all_vulnerabilities.extend(service.get("vulnerabilities", []))
@@ -117,6 +130,10 @@ class PolicyService:
             if state:
                 remediation_states.append(state)
             all_pending_deps.extend(service.get("pending_dependency_fixes", []))
+            all_dockerfile_findings.extend(service.get("dockerfile_findings", []))
+
+        if self.has_blocking_dockerfile_findings(all_dockerfile_findings):
+            return "FAIL"
 
         if not all_vulnerabilities:
             return "PASS"
@@ -129,6 +146,7 @@ class PolicyService:
             all_vulnerabilities,
             remediation_state=aggregate_state,
             pending_dependency_fixes=all_pending_deps,
+            dockerfile_findings=all_dockerfile_findings,
         )
 
     def get_status_reason(
@@ -138,9 +156,9 @@ class PolicyService:
         remediation_state: str | None = None,
         pending_dependency_fixes: list[dict] | None = None,
         remediation_states: list[str] | None = None,
+        dockerfile_findings: list[dict] | None = None,
     ) -> str:
         classification = self.classify_vulnerabilities(vulnerabilities)
-        total = len(vulnerabilities)
         pending_deps = pending_dependency_fixes or []
 
         if decision == "PASS":
@@ -152,6 +170,16 @@ class PolicyService:
             ):
                 return RISK_ACCEPTED_MESSAGE
             return "No critical or high vulnerabilities detected."
+
+        blocking_docker = [
+            f for f in (dockerfile_findings or [])
+            if isinstance(f, dict) and f.get("severity") in ("CRITICAL", "HIGH")
+        ]
+        if blocking_docker:
+            return (
+                f"{len(blocking_docker)} Dockerfile security findings (HIGH/CRITICAL) "
+                f"must be remediated before deployment."
+            )
 
         if pending_deps:
             dep_files = sorted({f.get("source_file", "dependency file") for f in pending_deps})

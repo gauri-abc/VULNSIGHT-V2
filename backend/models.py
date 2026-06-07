@@ -30,6 +30,9 @@ class Service(Base):
 
     repository = relationship("Repository", back_populates="services")
     vulnerabilities = relationship("Vulnerability", back_populates="service", cascade="all, delete-orphan")
+    docker_security_findings = relationship(
+        "DockerSecurityFinding", back_populates="service", cascade="all, delete-orphan"
+    )
     remediation = relationship("Remediation", back_populates="service", uselist=False, cascade="all, delete-orphan")
 
 
@@ -44,8 +47,24 @@ class Vulnerability(Base):
     installed_version = Column(String(128), default="")
     fixed_version = Column(String(128), default="")
     description = Column(Text, default="")
+    category = Column(String(32), default="image")
 
     service = relationship("Service", back_populates="vulnerabilities")
+
+
+class DockerSecurityFinding(Base):
+    __tablename__ = "docker_security_findings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    service_id = Column(Integer, ForeignKey("services.id"), nullable=False)
+    severity = Column(String(32), nullable=False)
+    rule = Column(String(255), nullable=False)
+    description = Column(Text, default="")
+    recommendation = Column(Text, default="")
+    source = Column(String(64), default="trivy")
+    rule_id = Column(String(64), default="")
+
+    service = relationship("Service", back_populates="docker_security_findings")
 
 
 class ScanHistory(Base):
