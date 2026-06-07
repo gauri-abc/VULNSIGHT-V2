@@ -30,12 +30,10 @@ class RemediationService:
     )
 
     BASE_IMAGE_UPGRADES = [
-        (r"FROM\s+python:3\.12-slim\b", "FROM python:3.12.11-slim-bookworm"),
-        (r"FROM\s+python:3\.11-slim\b", "FROM python:3.11.11-slim-bookworm"),
-        (r"FROM\s+python:3\.10-slim\b", "FROM python:3.10.16-slim-bookworm"),
-        (r"FROM\s+python:3\.9-slim\b", "FROM python:3.9.21-slim-bookworm"),
-        (r"FROM\s+python:3\.12\b", "FROM python:3.12.11-slim-bookworm"),
-        (r"FROM\s+python:3\.11\b", "FROM python:3.11.11-slim-bookworm"),
+        (r"FROM\s+python:3\.12-slim\b", "FROM python:3.12-slim-bookworm"),
+        (r"FROM\s+python:3\.11-slim\b", "FROM python:3.11-slim-bookworm"),
+        (r"FROM\s+python:3\.10-slim\b", "FROM python:3.10-slim-bookworm"),
+        (r"FROM\s+python:3\.9-slim\b", "FROM python:3.9-slim-bookworm"),
         (r"FROM\s+node:(\d+)-alpine\b", r"FROM node:\1.20.4-alpine3.20"),
         (r"FROM\s+node:(\d+)-slim\b", r"FROM node:\1.20.4-bookworm-slim"),
         (r"FROM\s+node:(\d+)\b", r"FROM node:\1.20.4-bookworm-slim"),
@@ -581,11 +579,17 @@ class RemediationService:
         return fixes
 
     def _upgrade_base_image(self, from_line: str) -> str:
+        if "@sha256:" in from_line.lower():
+            return from_line
+
         for pattern, replacement in self.BASE_IMAGE_UPGRADES:
             if re.search(pattern, from_line, re.IGNORECASE):
-                return re.sub(pattern, replacement, from_line, flags=re.IGNORECASE)
+                upgraded = re.sub(pattern, replacement, from_line, count=1, flags=re.IGNORECASE)
+                if upgraded != from_line:
+                    return upgraded
+
         if ":latest" in from_line.lower():
-            return re.sub(r":latest\b", ":stable", from_line, flags=re.IGNORECASE)
+            return re.sub(r":latest\b", ":stable", from_line, count=1, flags=re.IGNORECASE)
         return from_line
 
     def _is_alpine_base(self, dockerfile_content: str) -> bool:

@@ -43,6 +43,38 @@ class DockerService:
         parts = directory.replace("\\", "/").split("/")
         return re.sub(r"[^a-zA-Z0-9_-]", "-", parts[-1]).lower()
 
+    def _ensure_buildx(self):
+        inspect = subprocess.run(
+            ["docker", "buildx", "inspect", "vulnsight-builder"],
+            capture_output=True,
+            text=True,
+        )
+        if inspect.returncode == 0:
+            subprocess.run(
+                ["docker", "buildx", "use", "vulnsight-builder"],
+                capture_output=True,
+                text=True,
+            )
+            return
+
+        subprocess.run(
+            ["docker", "buildx", "create", "--name", "vulnsight-builder", "--use"],
+            capture_output=True,
+            text=True,
+        )
+
+    def _clean_build_error(self, stderr: str, stdout: str) -> str:
+        combined = f"{stderr or ''}\n{stdout or ''}"
+        lines = [
+            line for line in combined.splitlines()
+            if line.strip()
+            and "DEPRECATED: The legacy builder is deprecated" not in line
+            and "Install the buildx component" not in line
+        ]
+        if not lines:
+            return combined[-2000:]
+        return "\n".join(lines)[-2000:]
+
     def build_image(
         self,
         build_context: str,
@@ -56,9 +88,16 @@ class DockerService:
         if not os.path.isfile(dockerfile_arg):
             dockerfile_arg = dockerfile_path
 
+        self._ensure_buildx()
+
+        env = os.environ.copy()
+        env["DOCKER_BUILDKIT"] = "1"
+
         cmd = [
             "docker",
+            "buildx",
             "build",
+            "--load",
             "-t",
             image_tag,
             "-f",
@@ -71,13 +110,33 @@ class DockerService:
             capture_output=True,
             text=True,
             timeout=600,
+            env=env,
         )
 
         if result.returncode != 0:
-            error_output = result.stderr or result.stdout
-            raise RuntimeError(
-                f"Docker build failed for {service_name}: {error_output[-2000:]}"
+            fallback = subprocess.run(
+                [
+                    "docker",
+                    "build",
+                    "-t",
+                    image_tag,
+                    "-f",
+                    dockerfile_arg,
+                    build_context,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=600,
+                env=env,
             )
+            if fallback.returncode != 0:
+                error_output = self._clean_build_error(
+                    fallback.stderr or result.stderr,
+                    fallback.stdout or result.stdout,
+                )
+                raise RuntimeError(
+                    f"Docker build failed for {service_name}: {error_output}"
+                )
 
         return image_tag
 

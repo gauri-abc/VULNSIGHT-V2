@@ -296,16 +296,21 @@ class DockerfileSecurityService:
             upper = stripped.upper()
 
             if re.match(r"^FROM\s+", stripped, re.IGNORECASE) and not from_processed:
-                from_line = stripped
-                if any(k in finding_keys for k in ("VS-MUTABLE-BASE-TAG", "VS-UNPINNED-DIGEST", "VS-LATEST-TAG", "DS029", "DS030")):
-                    from_line = re.sub(
-                        r"FROM\s+python:3\.12-slim\b",
-                        "FROM python:3.12.11-slim-bookworm",
-                        from_line,
-                        flags=re.IGNORECASE,
+                if any(
+                    k in finding_keys
+                    for k in (
+                        "VS-MUTABLE-BASE-TAG",
+                        "VS-UNPINNED-DIGEST",
+                        "VS-LATEST-TAG",
+                        "DS029",
+                        "DS030",
                     )
-                    from_line = re.sub(r":latest\b", ":stable", from_line, flags=re.IGNORECASE)
-                result.append(from_line)
+                ):
+                    result.append(
+                        "# Pin base image with a digest, e.g. "
+                        "FROM python:3.12-slim-bookworm@sha256:<digest>"
+                    )
+                result.append(stripped)
                 result.append("")
                 if "VS-MISSING-LABEL" in finding_keys or "DS031" in finding_keys:
                     result.append('LABEL maintainer="security-team" version="1.0"')
