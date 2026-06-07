@@ -43,7 +43,18 @@ class DockerService:
         parts = directory.replace("\\", "/").split("/")
         return re.sub(r"[^a-zA-Z0-9_-]", "-", parts[-1]).lower()
 
-    def _ensure_buildx(self):
+    def _buildx_available(self) -> bool:
+        result = subprocess.run(
+            ["docker", "buildx", "version"],
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode == 0
+
+    def _ensure_buildx(self) -> bool:
+        if not self._buildx_available():
+            return False
+
         inspect = subprocess.run(
             ["docker", "buildx", "inspect", "vulnsight-builder"],
             capture_output=True,
@@ -55,25 +66,43 @@ class DockerService:
                 capture_output=True,
                 text=True,
             )
-            return
+            return True
 
-        subprocess.run(
+        create = subprocess.run(
             ["docker", "buildx", "create", "--name", "vulnsight-builder", "--use"],
             capture_output=True,
             text=True,
         )
+        return create.returncode == 0
 
     def _clean_build_error(self, stderr: str, stdout: str) -> str:
         combined = f"{stderr or ''}\n{stdout or ''}"
+        noise = (
+            "DEPRECATED: The legacy builder is deprecated",
+            "Install the buildx component",
+            "BuildKit is enabled but the buildx component is missing or broken",
+            "https://docs.docker.com/go/buildx/",
+        )
         lines = [
             line for line in combined.splitlines()
-            if line.strip()
-            and "DEPRECATED: The legacy builder is deprecated" not in line
-            and "Install the buildx component" not in line
+            if line.strip() and not any(fragment in line for fragment in noise)
         ]
         if not lines:
             return combined[-2000:]
         return "\n".join(lines)[-2000:]
+
+    def _run_build(
+        self,
+        cmd: list[str],
+        env: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=600,
+            env=env,
+        )
 
     def build_image(
         self,
@@ -88,16 +117,10 @@ class DockerService:
         if not os.path.isfile(dockerfile_arg):
             dockerfile_arg = dockerfile_path
 
-        self._ensure_buildx()
-
-        env = os.environ.copy()
-        env["DOCKER_BUILDKIT"] = "1"
-
-        cmd = [
+        base_env = os.environ.copy()
+        build_cmd = [
             "docker",
-            "buildx",
             "build",
-            "--load",
             "-t",
             image_tag,
             "-f",
@@ -105,40 +128,50 @@ class DockerService:
             build_context,
         ]
 
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=600,
-            env=env,
-        )
+        attempts: list[tuple[list[str], dict[str, str]]] = []
 
-        if result.returncode != 0:
-            fallback = subprocess.run(
-                [
-                    "docker",
-                    "build",
-                    "-t",
-                    image_tag,
-                    "-f",
-                    dockerfile_arg,
-                    build_context,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=600,
-                env=env,
+        if self._ensure_buildx():
+            buildx_env = base_env.copy()
+            buildx_env["DOCKER_BUILDKIT"] = "1"
+            attempts.append(
+                (
+                    [
+                        "docker",
+                        "buildx",
+                        "build",
+                        "--load",
+                        "-t",
+                        image_tag,
+                        "-f",
+                        dockerfile_arg,
+                        build_context,
+                    ],
+                    buildx_env,
+                )
             )
-            if fallback.returncode != 0:
-                error_output = self._clean_build_error(
-                    fallback.stderr or result.stderr,
-                    fallback.stdout or result.stdout,
-                )
-                raise RuntimeError(
-                    f"Docker build failed for {service_name}: {error_output}"
-                )
 
-        return image_tag
+        buildkit_env = base_env.copy()
+        buildkit_env["DOCKER_BUILDKIT"] = "1"
+        attempts.append((build_cmd, buildkit_env))
+
+        legacy_env = base_env.copy()
+        legacy_env["DOCKER_BUILDKIT"] = "0"
+        attempts.append((build_cmd, legacy_env))
+
+        last_result = None
+        for cmd, env in attempts:
+            result = self._run_build(cmd, env)
+            if result.returncode == 0:
+                return image_tag
+            last_result = result
+
+        error_output = self._clean_build_error(
+            last_result.stderr if last_result else "",
+            last_result.stdout if last_result else "",
+        )
+        raise RuntimeError(
+            f"Docker build failed for {service_name}: {error_output}"
+        )
 
     def build_all_images(self, repo_path: str, dockerfiles: list[dict]) -> list[dict]:
         scan_uuid = str(uuid.uuid4())[:8]
