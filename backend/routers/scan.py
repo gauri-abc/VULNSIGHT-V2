@@ -269,6 +269,11 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
                     "remediation_state": remediation_state,
                     "pending_dependency_fixes": pending_deps,
                     "dockerfile_findings": dockerfile_findings,
+                    "has_actionable_dockerfile_fix": (
+                        remediation_data.get("has_actionable_dockerfile_fix", False)
+                        if remediation_data
+                        else False
+                    ),
                 }
             )
 
@@ -283,10 +288,14 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
             if state:
                 remediation_states.append(state)
 
+        any_actionable_dockerfile_fix = any(
+            svc.get("has_actionable_dockerfile_fix") for svc in service_policy_data
+        )
         risk_accepted = policy_service.is_risk_accepted(
             all_vulnerabilities,
             remediation_states=remediation_states or None,
             pending_dependency_fixes=all_pending_deps,
+            has_actionable_dockerfile_fix=any_actionable_dockerfile_fix,
         )
         status_reason = policy_service.get_status_reason(
             all_vulnerabilities,
@@ -295,6 +304,7 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
             pending_dependency_fixes=all_pending_deps,
             remediation_states=remediation_states or None,
             dockerfile_findings=all_dockerfile_findings,
+            has_actionable_dockerfile_fix=any_actionable_dockerfile_fix,
         )
 
         scan_record = ScanHistory(

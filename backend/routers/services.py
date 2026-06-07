@@ -95,21 +95,28 @@ def get_services_by_scan(scan_id: int, db: Session = Depends(get_db)):
 
         remediation_state = None
         pending_dependency_fixes = []
+        has_actionable_dockerfile_fix = False
         if service.remediation:
             remediation_state = service.remediation.remediation_state
             dep_raw = json.loads(service.remediation.dependency_fixes_json or "[]")
             pending_dependency_fixes = [f for f in dep_raw if not f.get("applied")]
+            has_actionable_dockerfile_fix = bool(
+                service.remediation.show_generate_fix
+                and (service.remediation.updated_dockerfile or "").strip()
+            )
 
         status = policy_service.evaluate_deployment(
             vulns,
             remediation_state=remediation_state,
             pending_dependency_fixes=pending_dependency_fixes,
             dockerfile_findings=metrics["docker_findings"],
+            has_actionable_dockerfile_fix=has_actionable_dockerfile_fix,
         )
         risk_accepted = policy_service.is_risk_accepted(
             vulns,
             remediation_state=remediation_state,
             pending_dependency_fixes=pending_dependency_fixes,
+            has_actionable_dockerfile_fix=has_actionable_dockerfile_fix,
         )
         status_reason = policy_service.get_status_reason(
             vulns,
@@ -117,6 +124,7 @@ def get_services_by_scan(scan_id: int, db: Session = Depends(get_db)):
             remediation_state,
             pending_dependency_fixes=pending_dependency_fixes,
             dockerfile_findings=metrics["docker_findings"],
+            has_actionable_dockerfile_fix=has_actionable_dockerfile_fix,
         )
 
         combined = metrics["combined_counts"]

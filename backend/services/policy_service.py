@@ -3,9 +3,13 @@ REMEDIATION_APPLIED = "REMEDIATION_APPLIED"
 REMEDIATION_EXHAUSTED = "REMEDIATION_EXHAUSTED"
 
 RISK_ACCEPTED_MESSAGE = (
-    "Deployment Approved. All available remediations have been applied. "
+    "Deployment Approved. No fixes are available in Dockerfile or dependency files. "
     "Remaining vulnerabilities originate from upstream vendor packages. "
     "No vendor-provided fixes are currently available. Risk has been accepted."
+)
+
+PASS_NO_ACTION_MESSAGE = (
+    "Deployment Approved. No actionable fixes are required in Dockerfile or dependency files."
 )
 
 
@@ -48,14 +52,13 @@ class PolicyService:
             "total_high": count_severity(fixable + unfixable, "HIGH"),
         }
 
+    def has_actionable_dependency_fixes(
+        self, pending_dependency_fixes: list[dict] | None
+    ) -> bool:
+        return bool(pending_dependency_fixes)
+
     def has_blocking_dockerfile_findings(self, dockerfile_findings: list[dict] | None) -> bool:
-        if not dockerfile_findings:
-            return False
-        blocking_severities = {"CRITICAL", "HIGH", "MEDIUM"}
-        return any(
-            finding.get("severity") in blocking_severities
-            for finding in dockerfile_findings
-        )
+        return bool(dockerfile_findings)
 
     def count_dockerfile_findings(self, dockerfile_findings: list[dict] | None) -> dict:
         counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
@@ -73,36 +76,17 @@ class PolicyService:
         remediation_state: str | None = None,
         pending_dependency_fixes: list[dict] | None = None,
         dockerfile_findings: list[dict] | None = None,
+        has_actionable_dockerfile_fix: bool = False,
     ) -> str:
-        if self.has_blocking_dockerfile_findings(dockerfile_findings):
+        _ = remediation_state, dockerfile_findings
+
+        if self.has_actionable_dependency_fixes(pending_dependency_fixes):
             return "FAIL"
 
-        if not vulnerabilities:
-            return "PASS"
-
-        classification = self.classify_vulnerabilities(vulnerabilities)
-
-        if pending_dependency_fixes:
-            critical_high_deps = [
-                f for f in pending_dependency_fixes
-                if f.get("severity") in ("CRITICAL", "HIGH")
-            ]
-            if critical_high_deps:
-                return "FAIL"
-
-        if classification["fixable_critical"] > 0 or classification["fixable_high"] > 0:
+        if has_actionable_dockerfile_fix:
             return "FAIL"
 
-        if classification["total_critical"] == 0 and classification["total_high"] == 0:
-            return "PASS"
-
-        remaining = len(vulnerabilities)
-        all_unfixable = classification["fixable_count"] == 0 and remaining > 0
-
-        if all_unfixable and remediation_state == REMEDIATION_EXHAUSTED:
-            return "PASS"
-
-        return "FAIL"
+        return "PASS"
 
     def is_risk_accepted(
         self,
@@ -110,55 +94,36 @@ class PolicyService:
         remediation_state: str | None = None,
         pending_dependency_fixes: list[dict] | None = None,
         remediation_states: list[str] | None = None,
+        has_actionable_dockerfile_fix: bool = False,
     ) -> bool:
+        _ = remediation_state, remediation_states
+
+        if self.has_actionable_dependency_fixes(pending_dependency_fixes):
+            return False
+        if has_actionable_dockerfile_fix:
+            return False
         if not vulnerabilities:
             return False
 
         classification = self.classify_vulnerabilities(vulnerabilities)
-        if classification["fixable_count"] != 0:
-            return False
         if classification["unfixable_count"] == 0:
             return False
-        if pending_dependency_fixes:
-            return False
 
-        if remediation_states is not None:
-            if not remediation_states:
-                return False
-            return all(state == REMEDIATION_EXHAUSTED for state in remediation_states)
-
-        return remediation_state == REMEDIATION_EXHAUSTED
+        return classification["fixable_count"] == 0
 
     def evaluate_repository(self, services: list[dict]) -> str:
-        all_vulnerabilities = []
-        remediation_states = []
         all_pending_deps = []
-        all_dockerfile_findings = []
 
         for service in services:
-            all_vulnerabilities.extend(service.get("vulnerabilities", []))
-            state = service.get("remediation_state")
-            if state:
-                remediation_states.append(state)
-            all_pending_deps.extend(service.get("pending_dependency_fixes", []))
-            all_dockerfile_findings.extend(service.get("dockerfile_findings", []))
+            pending_deps = service.get("pending_dependency_fixes", [])
+            all_pending_deps.extend(pending_deps)
+            if service.get("has_actionable_dockerfile_fix"):
+                return "FAIL"
 
-        if self.has_blocking_dockerfile_findings(all_dockerfile_findings):
+        if self.has_actionable_dependency_fixes(all_pending_deps):
             return "FAIL"
 
-        if not all_vulnerabilities:
-            return "PASS"
-
-        aggregate_state = None
-        if remediation_states and all(s == REMEDIATION_EXHAUSTED for s in remediation_states):
-            aggregate_state = REMEDIATION_EXHAUSTED
-
-        return self.evaluate_deployment(
-            all_vulnerabilities,
-            remediation_state=aggregate_state,
-            pending_dependency_fixes=all_pending_deps,
-            dockerfile_findings=all_dockerfile_findings,
-        )
+        return "PASS"
 
     def get_status_reason(
         self,
@@ -168,59 +133,31 @@ class PolicyService:
         pending_dependency_fixes: list[dict] | None = None,
         remediation_states: list[str] | None = None,
         dockerfile_findings: list[dict] | None = None,
+        has_actionable_dockerfile_fix: bool = False,
     ) -> str:
-        classification = self.classify_vulnerabilities(vulnerabilities)
+        _ = remediation_state, remediation_states, dockerfile_findings
         pending_deps = pending_dependency_fixes or []
 
         if decision == "PASS":
             if self.is_risk_accepted(
                 vulnerabilities,
-                remediation_state=remediation_state,
                 pending_dependency_fixes=pending_deps,
-                remediation_states=remediation_states,
+                has_actionable_dockerfile_fix=has_actionable_dockerfile_fix,
             ):
                 return RISK_ACCEPTED_MESSAGE
-            return "No critical or high vulnerabilities detected."
-
-        blocking_docker = [
-            f for f in (dockerfile_findings or [])
-            if isinstance(f, dict) and f.get("severity") in ("CRITICAL", "HIGH", "MEDIUM")
-        ]
-        if blocking_docker:
-            return (
-                f"{len(blocking_docker)} Dockerfile security misconfigurations "
-                f"must be remediated before deployment."
-            )
+            return PASS_NO_ACTION_MESSAGE
 
         if pending_deps:
             dep_files = sorted({f.get("source_file", "dependency file") for f in pending_deps})
-            critical_high = sum(
-                1 for f in pending_deps if f.get("severity") in ("CRITICAL", "HIGH")
-            )
-            if critical_high:
-                return (
-                    f"{critical_high} fixable critical/high dependency vulnerabilities "
-                    f"require updates in {', '.join(dep_files)} before deployment."
-                )
             return (
-                f"{len(pending_deps)} dependency fixes required in "
+                f"{len(pending_deps)} dependency update(s) required in "
                 f"{', '.join(dep_files)} before deployment."
             )
 
-        if classification["fixable_critical"] > 0:
+        if has_actionable_dockerfile_fix:
             return (
-                f"{classification['fixable_critical']} fixable critical "
-                f"vulnerabilities require remediation before deployment."
+                "Dockerfile remediations are available and must be applied before deployment."
             )
-
-        if classification["fixable_high"] > 0:
-            return (
-                f"{classification['fixable_high']} fixable high "
-                f"vulnerabilities require remediation before deployment."
-            )
-
-        if remediation_state == REMEDIATION_AVAILABLE:
-            return "Remediation available but not yet applied."
 
         return "Security gate failed. Remediation required before deployment."
 

@@ -88,17 +88,22 @@ def _to_response(remediation: Remediation, service: Service) -> RemediationRespo
         }
         for f in dockerfile_security_findings
     ]
+    has_actionable_dockerfile_fix = bool(
+        show_fix and (remediation.updated_dockerfile or "").strip()
+    )
     risk_accepted = policy_service.is_risk_accepted(
         vuln_dicts,
         remediation_state=state,
         pending_dependency_fixes=pending_dependency_fixes,
-    ) and not policy_service.has_blocking_dockerfile_findings(dockerfile_findings)
+        has_actionable_dockerfile_fix=has_actionable_dockerfile_fix,
+    )
     status_reason = policy_service.get_status_reason(
         vuln_dicts,
         decision,
         state,
         pending_dependency_fixes=pending_dependency_fixes,
         dockerfile_findings=dockerfile_findings,
+        has_actionable_dockerfile_fix=has_actionable_dockerfile_fix,
     )
 
     return RemediationResponse(

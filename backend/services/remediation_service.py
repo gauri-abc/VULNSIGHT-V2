@@ -115,6 +115,11 @@ class RemediationService:
         previous_updated = (
             (previous_remediation or {}).get("updated_dockerfile") or ""
         )
+        dockerfile_applied = (
+            (bool(previous_updated) and self._dockerfiles_match(dockerfile_content, previous_updated))
+            or (bool(candidate_updated) and self._dockerfiles_match(dockerfile_content, candidate_updated))
+        )
+        has_actionable_dockerfile_fix = bool(candidate_updated) and not dockerfile_applied
 
         state, status_message, show_generate_fix = self._determine_state(
             dockerfile_content=dockerfile_content,
@@ -156,6 +161,7 @@ class RemediationService:
             remediation_state=state,
             pending_dependency_fixes=pending_dependency_fixes,
             dockerfile_findings=dockerfile_findings,
+            has_actionable_dockerfile_fix=has_actionable_dockerfile_fix,
         )
 
         estimated_counts = (
@@ -168,10 +174,18 @@ class RemediationService:
         estimated_vulns = self._build_estimated_vulnerabilities(
             annotated_vulns, estimated_counts
         )
+        estimated_has_dockerfile_fix = (
+            has_actionable_dockerfile_fix if state == REMEDIATION_AVAILABLE else False
+        )
+        estimated_pending_deps = (
+            pending_dependency_fixes if state == REMEDIATION_AVAILABLE else []
+        )
         estimated_decision = self.policy_service.evaluate_deployment(
             estimated_vulns,
             remediation_state=REMEDIATION_EXHAUSTED if state != REMEDIATION_AVAILABLE else None,
-            dockerfile_findings=[] if state != REMEDIATION_AVAILABLE else dockerfile_findings,
+            pending_dependency_fixes=estimated_pending_deps,
+            dockerfile_findings=dockerfile_findings,
+            has_actionable_dockerfile_fix=estimated_has_dockerfile_fix,
         )
 
         original_total = sum(original_counts.values())
@@ -213,12 +227,14 @@ class RemediationService:
             "dependency_patches": dependency_patches,
             "pending_dependency_count": len(pending_dependency_fixes),
             "dockerfile_security_findings": dockerfile_findings,
+            "has_actionable_dockerfile_fix": has_actionable_dockerfile_fix,
             "status_reason": self.policy_service.get_status_reason(
                 vulnerabilities,
                 current_decision,
                 state,
                 pending_dependency_fixes=pending_dependency_fixes,
                 dockerfile_findings=dockerfile_findings,
+                has_actionable_dockerfile_fix=has_actionable_dockerfile_fix,
             ),
             "original_score": original_score,
             "score_after_remediation": score_after,
