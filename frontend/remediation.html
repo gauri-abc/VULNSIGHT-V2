@@ -50,6 +50,26 @@
       </p>
     </div>
 
+    <div id="history-panel" class="card" style="display:none; margin-bottom: 2rem;">
+      <h3 style="margin-bottom: 1rem;">Remediation History</h3>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Service</th>
+              <th>State</th>
+              <th>Original Score</th>
+              <th>Score After Remediation</th>
+              <th>Remaining Vulnerabilities</th>
+              <th>Improvement</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="history-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
     <div id="remediation-container">
       <div class="empty-state">
         <p>No failed services requiring remediation. Run a scan or all services passed the security gate.</p>

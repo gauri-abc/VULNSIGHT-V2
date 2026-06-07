@@ -101,8 +101,12 @@ class RemediationResponse(BaseModel):
     service_id: int
     service_name: str
     dockerfile_path: str
+    remediation_state: str
+    status_message: str
+    show_generate_fix: bool
     current_dockerfile: str
     updated_dockerfile: str
+    previous_updated_dockerfile: str
     root_cause_analysis: list[str]
     recommended_fixes: list[str]
     vulnerabilities_found: list[VulnerabilitySummary]
@@ -114,5 +118,31 @@ class RemediationResponse(BaseModel):
     estimated_high: int
     estimated_medium: int
     estimated_low: int
+    remaining_critical: int
+    remaining_high: int
+    remaining_medium: int
+    remaining_low: int
     current_decision: str
     estimated_decision: str
+    original_score: float
+    score_after_remediation: float
+    improvement_percentage: float
+    original_critical: int
+    original_high: int
+    original_medium: int
+    original_low: int
+
+
+class RemediationHistoryResponse(BaseModel):
+    id: int
+    service_name: str
+    dockerfile_path: str
+    remediation_state: str
+    original_score: float
+    score_after_remediation: float
+    remaining_critical: int
+    remaining_high: int
+    remaining_medium: int
+    remaining_low: int
+    improvement_percentage: float
+    created_at: datetime

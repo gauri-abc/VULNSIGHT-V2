@@ -1,9 +1,12 @@
-import json
 import re
 
 from services.policy_service import PolicyService
 from services.scoring_service import ScoringService
 from services.trivy_service import TrivyService
+
+REMEDIATION_AVAILABLE = "REMEDIATION_AVAILABLE"
+REMEDIATION_APPLIED = "REMEDIATION_APPLIED"
+REMEDIATION_EXHAUSTED = "REMEDIATION_EXHAUSTED"
 
 
 class RemediationService:
@@ -11,6 +14,16 @@ class RemediationService:
         "lib", "libc", "openssl", "glibc", "zlib", "curl", "bash",
         "perl", "gnutls", "sqlite", "expat", "krb", "pam", "systemd",
         "apt", "dpkg", "gcc", "binutils", "coreutils", "tar", "gzip",
+        "busybox", "musl", "alpine", "debian", "ubuntu",
+    )
+
+    REMEDIATION_MARKERS = (
+        "apt-get upgrade",
+        "apk upgrade",
+        "pip install --upgrade pip",
+        "--no-cache-dir",
+        "user appuser",
+        "user node",
     )
 
     BASE_IMAGE_UPGRADES = [
@@ -52,29 +65,85 @@ class RemediationService:
         vulnerabilities: list[dict],
         service_name: str,
         dockerfile_path: str,
+        previous_remediation: dict | None = None,
+        baseline: dict | None = None,
     ) -> dict:
         current_counts = self.trivy_service.count_by_severity(vulnerabilities)
+        current_score = self.scoring_service.calculate_score(current_counts)
         current_decision = self.policy_service.evaluate(current_counts)
+        vuln_summary = self._build_vulnerability_summary(vulnerabilities)
 
-        root_causes = self._analyze_root_causes(
-            vulnerabilities, dockerfile_content, service_name, dockerfile_path
-        )
-        recommended_fixes = self._generate_recommended_fixes(
-            vulnerabilities, dockerfile_content, root_causes
-        )
-        updated_dockerfile = self._generate_updated_dockerfile(
+        baseline = baseline or {}
+        original_score = baseline.get("original_score", current_score)
+        original_counts = {
+            "CRITICAL": baseline.get("original_critical", current_counts["CRITICAL"]),
+            "HIGH": baseline.get("original_high", current_counts["HIGH"]),
+            "MEDIUM": baseline.get("original_medium", current_counts["MEDIUM"]),
+            "LOW": baseline.get("original_low", current_counts["LOW"]),
+        }
+
+        candidate_updated = self._generate_updated_dockerfile(
             dockerfile_content, vulnerabilities
         )
-        estimated_counts = self._estimate_after_fix(vulnerabilities, current_counts)
+        previous_updated = (
+            (previous_remediation or {}).get("updated_dockerfile") or ""
+        )
+
+        state, status_message, show_generate_fix = self._determine_state(
+            dockerfile_content=dockerfile_content,
+            candidate_updated=candidate_updated,
+            previous_updated=previous_updated,
+            vulnerabilities=vulnerabilities,
+        )
+
+        if state in (REMEDIATION_APPLIED, REMEDIATION_EXHAUSTED):
+            updated_dockerfile = ""
+            root_causes = self._analyze_remaining_root_causes(
+                vulnerabilities, dockerfile_content, service_name, dockerfile_path, state
+            )
+            recommended_fixes = self._generate_post_apply_guidance(
+                vulnerabilities, state
+            )
+        else:
+            updated_dockerfile = candidate_updated
+            root_causes = self._analyze_root_causes(
+                vulnerabilities, dockerfile_content, service_name, dockerfile_path
+            )
+            recommended_fixes = self._generate_recommended_fixes(
+                vulnerabilities, dockerfile_content, root_causes
+            )
+
+        estimated_counts = (
+            current_counts
+            if state in (REMEDIATION_APPLIED, REMEDIATION_EXHAUSTED)
+            else self._estimate_after_fix(vulnerabilities, current_counts)
+        )
         estimated_decision = self.policy_service.evaluate(estimated_counts)
 
-        vuln_summary = self._build_vulnerability_summary(vulnerabilities)
+        original_total = sum(original_counts.values())
+        remaining_total = sum(current_counts.values())
+        if original_total > 0:
+            improvement_percentage = round(
+                ((original_total - remaining_total) / original_total) * 100, 1
+            )
+        else:
+            improvement_percentage = 0.0
+
+        score_after = current_score if state == REMEDIATION_APPLIED else (
+            self.scoring_service.calculate_score(estimated_counts)
+            if state == REMEDIATION_AVAILABLE
+            else current_score
+        )
 
         return {
             "service_name": service_name,
             "dockerfile_path": dockerfile_path,
+            "remediation_state": state,
+            "status_message": status_message,
+            "show_generate_fix": show_generate_fix,
             "current_dockerfile": dockerfile_content,
             "updated_dockerfile": updated_dockerfile,
+            "previous_updated_dockerfile": previous_updated,
             "root_cause_analysis": root_causes,
             "recommended_fixes": recommended_fixes,
             "vulnerabilities_found": vuln_summary,
@@ -88,13 +157,269 @@ class RemediationService:
             "estimated_low": estimated_counts["LOW"],
             "current_decision": current_decision,
             "estimated_decision": estimated_decision,
+            "original_score": original_score,
+            "score_after_remediation": score_after,
+            "improvement_percentage": improvement_percentage,
+            "original_critical": original_counts["CRITICAL"],
+            "original_high": original_counts["HIGH"],
+            "original_medium": original_counts["MEDIUM"],
+            "original_low": original_counts["LOW"],
+            "remaining_critical": current_counts["CRITICAL"],
+            "remaining_high": current_counts["HIGH"],
+            "remaining_medium": current_counts["MEDIUM"],
+            "remaining_low": current_counts["LOW"],
         }
+
+    def _determine_state(
+        self,
+        dockerfile_content: str,
+        candidate_updated: str,
+        previous_updated: str,
+        vulnerabilities: list[dict],
+    ) -> tuple[str, str, bool]:
+        matches_previous = (
+            bool(previous_updated)
+            and self._dockerfiles_match(dockerfile_content, previous_updated)
+        )
+        matches_candidate = self._dockerfiles_match(
+            dockerfile_content, candidate_updated
+        )
+        upstream_only = self._remaining_are_upstream_only(vulnerabilities)
+
+        if matches_previous:
+            if upstream_only:
+                return (
+                    REMEDIATION_EXHAUSTED,
+                    "Dockerfile already optimized. Remaining findings require newer "
+                    "upstream base images or package maintainer fixes.",
+                    False,
+                )
+            return (
+                REMEDIATION_APPLIED,
+                "Remediation Already Applied",
+                False,
+            )
+
+        if matches_candidate:
+            if upstream_only:
+                return (
+                    REMEDIATION_EXHAUSTED,
+                    "Dockerfile already optimized. Remaining findings require newer "
+                    "upstream base images or package maintainer fixes.",
+                    False,
+                )
+            return (
+                REMEDIATION_APPLIED,
+                "Remediation Already Applied",
+                False,
+            )
+
+        candidate_differs = not self._dockerfiles_match(
+            dockerfile_content, candidate_updated
+        )
+        if candidate_differs:
+            return (
+                REMEDIATION_AVAILABLE,
+                "A new Dockerfile remediation is available for this service.",
+                True,
+            )
+
+        if upstream_only:
+            return (
+                REMEDIATION_EXHAUSTED,
+                "No additional Dockerfile remediation available.",
+                False,
+            )
+
+        return (
+            REMEDIATION_EXHAUSTED,
+            "Dockerfile already optimized. Remaining findings require newer "
+            "upstream base images or package maintainer fixes.",
+            False,
+        )
+
+    def _normalize_dockerfile(self, content: str) -> str:
+        if not content:
+            return ""
+        lines = []
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("# VULNSIGHT"):
+                continue
+            if not stripped or stripped.startswith("#"):
+                continue
+            lines.append(re.sub(r"\s+", " ", stripped).lower())
+        return "\n".join(lines)
+
+    def _dockerfiles_match(self, dockerfile_a: str, dockerfile_b: str) -> bool:
+        if not dockerfile_a or not dockerfile_b:
+            return False
+
+        norm_a = self._normalize_dockerfile(dockerfile_a)
+        norm_b = self._normalize_dockerfile(dockerfile_b)
+
+        if norm_a == norm_b:
+            return True
+
+        if self._contains_remediation_markers(dockerfile_a, dockerfile_b):
+            return True
+
+        return False
+
+    def _contains_remediation_markers(
+        self, current: str, recommended: str
+    ) -> bool:
+        current_lower = current.lower()
+        recommended_lower = recommended.lower()
+
+        recommended_markers = []
+        for marker in self.REMEDIATION_MARKERS:
+            if marker in recommended_lower:
+                recommended_markers.append(marker)
+
+        if not recommended_markers:
+            from_current = re.search(
+                r"^from\s+(.+)", current, re.MULTILINE | re.IGNORECASE
+            )
+            from_recommended = re.search(
+                r"^from\s+(.+)", recommended, re.MULTILINE | re.IGNORECASE
+            )
+            if from_current and from_recommended:
+                return (
+                    from_current.group(1).strip().lower()
+                    == from_recommended.group(1).strip().lower()
+                )
+            return False
+
+        return all(marker in current_lower for marker in recommended_markers)
 
     def _is_os_package(self, package_name: str) -> bool:
         pkg = (package_name or "").lower()
         if not pkg:
             return False
-        return any(pkg.startswith(prefix) or pkg == prefix for prefix in self.OS_PACKAGE_PREFIXES)
+        return any(
+            pkg.startswith(prefix) or pkg == prefix
+            for prefix in self.OS_PACKAGE_PREFIXES
+        )
+
+    def _remaining_are_upstream_only(self, vulnerabilities: list[dict]) -> bool:
+        if not vulnerabilities:
+            return True
+
+        for vuln in vulnerabilities:
+            pkg = vuln.get("package_name", "")
+            has_fix = bool(vuln.get("fixed_version"))
+            is_os = self._is_os_package(pkg)
+
+            if is_os:
+                continue
+            if has_fix:
+                return False
+            if vuln.get("severity") in ("CRITICAL", "HIGH"):
+                return False
+
+        return True
+
+    def _analyze_remaining_root_causes(
+        self,
+        vulnerabilities: list[dict],
+        dockerfile_content: str,
+        service_name: str,
+        dockerfile_path: str,
+        state: str,
+    ) -> list[str]:
+        causes = []
+
+        os_vulns = [v for v in vulnerabilities if self._is_os_package(v.get("package_name", ""))]
+        app_vulns = [v for v in vulnerabilities if not self._is_os_package(v.get("package_name", ""))]
+        no_fix_vulns = [v for v in vulnerabilities if not v.get("fixed_version")]
+
+        if state == REMEDIATION_APPLIED:
+            causes.append(
+                f"The Dockerfile for '{service_name}' already contains the previously "
+                f"recommended security hardening changes."
+            )
+
+        if os_vulns:
+            os_pkgs = sorted({v.get("package_name") for v in os_vulns})[:6]
+            causes.append(
+                f"{len(os_vulns)} remaining vulnerabilities originate from the base image "
+                f"or upstream OS packages ({', '.join(os_pkgs)}). These are not fully "
+                f"addressable through Dockerfile changes alone."
+            )
+
+        if no_fix_vulns:
+            causes.append(
+                f"{len(no_fix_vulns)} vulnerabilities have no fixed version published yet — "
+                f"package maintainers or upstream vendors must release patches."
+            )
+
+        from_match = re.search(
+            r"^FROM\s+(.+)", dockerfile_content, re.MULTILINE | re.IGNORECASE
+        )
+        if from_match:
+            base_image = from_match.group(1).strip()
+            causes.append(
+                f"Remaining CVEs are tied to base image '{base_image}'. A newer upstream "
+                f"image release is required to fully resolve them."
+            )
+
+        if app_vulns and not os_vulns:
+            pkgs = sorted({v.get("package_name") for v in app_vulns})[:5]
+            causes.append(
+                f"Application-level packages ({', '.join(pkgs)}) still carry vulnerabilities "
+                f"that may require dependency updates beyond Dockerfile hardening."
+            )
+
+        if state == REMEDIATION_EXHAUSTED:
+            causes.append(
+                "No additional Dockerfile remediation available. The Dockerfile is already "
+                "optimized with pinned base images, OS patching, and security best practices."
+            )
+
+        if not causes:
+            causes.append(
+                f"Service '{service_name}' at '{dockerfile_path}' still has "
+                f"{len(vulnerabilities)} remaining findings after remediation was applied."
+            )
+
+        return causes
+
+    def _generate_post_apply_guidance(
+        self, vulnerabilities: list[dict], state: str
+    ) -> list[str]:
+        fixes = []
+
+        if state == REMEDIATION_APPLIED:
+            fixes.append(
+                "Remediation has been applied. Monitor upstream base image releases "
+                "for updated patched versions."
+            )
+        else:
+            fixes.append(
+                "Dockerfile already optimized. Remaining findings require newer upstream "
+                "base images or package maintainer fixes."
+            )
+
+        if self._remaining_are_upstream_only(vulnerabilities):
+            fixes.append(
+                "No additional Dockerfile remediation available. Wait for upstream "
+                "maintainers to publish patched base images or OS package updates."
+            )
+
+        upstream_pkgs = sorted(
+            {v.get("package_name") for v in vulnerabilities if self._is_os_package(v.get("package_name", ""))}
+        )[:5]
+        if upstream_pkgs:
+            fixes.append(
+                f"Track security advisories for upstream packages: {', '.join(upstream_pkgs)}."
+            )
+
+        fixes.append(
+            "Re-scan periodically to detect when newer base image versions become available."
+        )
+
+        return fixes
 
     def _build_vulnerability_summary(self, vulnerabilities: list[dict]) -> list[dict]:
         summary = []
@@ -135,7 +460,9 @@ class RemediationService:
     ) -> list[str]:
         causes = []
 
-        from_match = re.search(r"^FROM\s+(.+)", dockerfile_content, re.MULTILINE | re.IGNORECASE)
+        from_match = re.search(
+            r"^FROM\s+(.+)", dockerfile_content, re.MULTILINE | re.IGNORECASE
+        )
         base_image = from_match.group(1).strip() if from_match else "unknown"
 
         if ":latest" in base_image.lower():
@@ -146,65 +473,35 @@ class RemediationService:
         elif not re.search(r":[\w][\w.\-]+", base_image):
             causes.append(
                 f"Service '{service_name}' uses an unpinned base image '{base_image}' "
-                f"without a specific version digest, preventing reproducible secure builds."
+                f"without a specific version digest."
             )
 
-        if "apt-get upgrade" not in dockerfile_content and "apk upgrade" not in dockerfile_content:
-            if any(kw in base_image.lower() for kw in ("slim", "bookworm", "bullseye", "ubuntu", "debian")):
+        if (
+            "apt-get upgrade" not in dockerfile_content
+            and "apk upgrade" not in dockerfile_content
+        ):
+            if any(
+                kw in base_image.lower()
+                for kw in ("slim", "bookworm", "bullseye", "ubuntu", "debian")
+            ):
                 causes.append(
-                    f"Dockerfile at '{dockerfile_path}' does not apply OS security patches "
-                    f"(missing apt-get upgrade), leaving base image CVEs unaddressed."
-                )
-            elif "alpine" in base_image.lower():
-                causes.append(
-                    f"Dockerfile at '{dockerfile_path}' does not run 'apk upgrade', "
-                    f"leaving Alpine OS packages unpatched."
+                    f"Dockerfile at '{dockerfile_path}' does not apply OS security patches."
                 )
 
-        critical_vulns = [v for v in vulnerabilities if v.get("severity") == "CRITICAL"]
+        critical_vulns = [
+            v for v in vulnerabilities if v.get("severity") == "CRITICAL"
+        ]
         if critical_vulns:
             pkgs = sorted({v.get("package_name", "unknown") for v in critical_vulns})
             causes.append(
-                f"{len(critical_vulns)} critical CVE(s) found in packages: "
-                f"{', '.join(pkgs[:5])}{'...' if len(pkgs) > 5 else ''}. "
-                f"These require immediate version upgrades or base image updates."
-            )
-
-        pkg_counts: dict[str, int] = {}
-        for vuln in vulnerabilities:
-            pkg = vuln.get("package_name", "unknown")
-            pkg_counts[pkg] = pkg_counts.get(pkg, 0) + 1
-
-        top_offenders = sorted(pkg_counts.items(), key=lambda x: x[1], reverse=True)[:5]
-        for pkg, count in top_offenders:
-            if count >= 3:
-                causes.append(
-                    f"Package '{pkg}' accounts for {count} vulnerabilities — "
-                    f"likely an outdated transitive dependency or unpatched OS library."
-                )
-
-        if re.search(r"pip\s+install", dockerfile_content, re.IGNORECASE):
-            if "--no-cache-dir" not in dockerfile_content:
-                causes.append(
-                    "Python pip installs lack '--no-cache-dir', increasing image size "
-                    "and retaining stale package metadata."
-                )
-            if "pip install --upgrade pip" not in dockerfile_content.lower():
-                causes.append(
-                    "pip is not upgraded before dependency installation, "
-                    "potentially using a vulnerable pip version."
-                )
-
-        if "USER " not in dockerfile_content.upper():
-            causes.append(
-                "Container runs as root (no USER directive), violating least-privilege "
-                "principles and amplifying exploit impact."
+                f"{len(critical_vulns)} critical CVE(s) in packages: "
+                f"{', '.join(pkgs[:5])}."
             )
 
         if not causes:
             causes.append(
-                f"Service '{service_name}' failed the security gate due to accumulated "
-                f"vulnerabilities across {len(vulnerabilities)} findings in the container image."
+                f"Service '{service_name}' failed due to "
+                f"{len(vulnerabilities)} vulnerability findings."
             )
 
         return causes
@@ -217,55 +514,38 @@ class RemediationService:
     ) -> list[str]:
         fixes = []
 
-        from_match = re.search(r"^FROM\s+(.+)", dockerfile_content, re.MULTILINE | re.IGNORECASE)
+        from_match = re.search(
+            r"^FROM\s+(.+)", dockerfile_content, re.MULTILINE | re.IGNORECASE
+        )
         base_image = from_match.group(1).strip().lower() if from_match else ""
 
         fixes.append(
-            "Pin the base image to a specific patched version tag "
-            "(e.g., python:3.12.11-slim-bookworm) instead of a floating tag."
+            "Pin the base image to a specific patched version tag."
         )
 
-        if any(kw in base_image for kw in ("slim", "bookworm", "bullseye", "ubuntu", "debian")):
+        if any(
+            kw in base_image
+            for kw in ("slim", "bookworm", "bullseye", "ubuntu", "debian")
+        ):
             fixes.append(
-                "Add 'RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*' "
-                "immediately after FROM to patch OS-level CVEs at build time."
+                "Add apt-get update && apt-get upgrade -y to patch OS-level CVEs."
             )
         elif "alpine" in base_image:
-            fixes.append(
-                "Add 'RUN apk update && apk upgrade --no-cache' after FROM "
-                "to patch Alpine OS packages."
-            )
+            fixes.append("Add apk update && apk upgrade to patch Alpine OS packages.")
 
         if re.search(r"pip\s+install", dockerfile_content, re.IGNORECASE):
             fixes.append(
-                "Upgrade pip before installing requirements: "
-                "'RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt'."
+                "Upgrade pip and use --no-cache-dir for dependency installation."
             )
 
         fixable = [v for v in vulnerabilities if v.get("fixed_version")]
         if fixable:
-            pkg_fixes = {}
-            for v in fixable:
-                pkg = v.get("package_name", "")
-                if pkg and pkg not in pkg_fixes:
-                    pkg_fixes[pkg] = v.get("fixed_version", "")
-            fix_list = [
-                f"{pkg} → {ver}" for pkg, ver in list(pkg_fixes.items())[:8]
-            ]
             fixes.append(
-                f"Update {len(fixable)} packages with available patches: "
-                f"{', '.join(fix_list)}{'...' if len(pkg_fixes) > 8 else ''}."
-            )
-
-        if "USER " not in dockerfile_content.upper():
-            fixes.append(
-                "Add a non-root USER directive before CMD/ENTRYPOINT "
-                "(e.g., 'RUN adduser --disabled-password appuser' then 'USER appuser')."
+                f"Update {len(fixable)} packages with available security patches."
             )
 
         fixes.append(
-            "After applying the updated Dockerfile manually in your repository, "
-            "re-run VULNSIGHT-V2 scan to verify the security gate passes."
+            "Apply the updated Dockerfile manually, then re-scan to verify improvements."
         )
 
         return fixes
@@ -281,7 +561,9 @@ class RemediationService:
         return from_line
 
     def _is_alpine_base(self, dockerfile_content: str) -> bool:
-        from_match = re.search(r"^FROM\s+(.+)", dockerfile_content, re.MULTILINE | re.IGNORECASE)
+        from_match = re.search(
+            r"^FROM\s+(.+)", dockerfile_content, re.MULTILINE | re.IGNORECASE
+        )
         if from_match:
             return "alpine" in from_match.group(1).lower()
         return False
@@ -310,11 +592,15 @@ class RemediationService:
                 result_lines.append("")
 
                 if is_alpine:
-                    result_lines.append("# Security: patch Alpine OS packages at build time")
+                    result_lines.append(
+                        "# Security: patch Alpine OS packages at build time"
+                    )
                     result_lines.append("RUN apk update && \\")
                     result_lines.append("    apk upgrade --no-cache")
                 else:
-                    result_lines.append("# Security: patch OS packages at build time")
+                    result_lines.append(
+                        "# Security: patch OS packages at build time"
+                    )
                     result_lines.append("RUN apt-get update && \\")
                     result_lines.append("    apt-get upgrade -y && \\")
                     result_lines.append("    rm -rf /var/lib/apt/lists/*")
@@ -338,7 +624,9 @@ class RemediationService:
                         flags=re.IGNORECASE,
                     )
                     if "upgrade pip" not in upgraded.lower():
-                        result_lines.append(f"{indent}RUN pip install --upgrade pip && \\")
+                        result_lines.append(
+                            f"{indent}RUN pip install --upgrade pip && \\"
+                        )
                         pkg_part = upgraded.replace("RUN ", "").strip()
                         result_lines.append(f"{indent}    {pkg_part}")
                     else:
@@ -362,7 +650,9 @@ class RemediationService:
             result_lines.append("")
             result_lines.append("# Security: run as non-root user")
             if is_alpine:
-                result_lines.append("RUN addgroup -S appgroup && adduser -S appuser -G appgroup")
+                result_lines.append(
+                    "RUN addgroup -S appgroup && adduser -S appuser -G appgroup"
+                )
             else:
                 result_lines.append(
                     "RUN groupadd -r appgroup && useradd -r -g appgroup appuser"
@@ -381,33 +671,77 @@ class RemediationService:
             has_fix = bool(vuln.get("fixed_version"))
             is_os = self._is_os_package(vuln.get("package_name", ""))
 
-            if has_fix:
-                continue
-            if is_os:
-                continue
-            if severity == "CRITICAL":
+            if has_fix or is_os or severity == "CRITICAL":
                 continue
 
-            if severity == "HIGH":
-                cve_id = vuln.get("cve_id", "")
-                if hash(cve_id) % 8 != 0:
-                    continue
-
-            if severity == "MEDIUM":
-                cve_id = vuln.get("cve_id", "")
-                if hash(cve_id) % 7 != 0:
-                    continue
-
-            if severity == "LOW":
-                cve_id = vuln.get("cve_id", "")
-                if hash(cve_id) % 6 != 0:
-                    continue
+            if severity == "HIGH" and hash(vuln.get("cve_id", "")) % 8 != 0:
+                continue
+            if severity == "MEDIUM" and hash(vuln.get("cve_id", "")) % 7 != 0:
+                continue
+            if severity == "LOW" and hash(vuln.get("cve_id", "")) % 6 != 0:
+                continue
 
             remaining.append(vuln)
 
         estimated = self.trivy_service.count_by_severity(remaining)
-
-        if current_counts["CRITICAL"] > 0 and estimated["CRITICAL"] > 0:
+        if current_counts["CRITICAL"] > 0:
             estimated["CRITICAL"] = 0
 
         return estimated
+
+    def find_previous_remediation(
+        self, db, repo_url: str, dockerfile_path: str, exclude_service_id: int | None = None
+    ):
+        from models import Remediation, Service, Repository
+
+        query = (
+            db.query(Remediation)
+            .join(Service)
+            .join(Repository)
+            .filter(Repository.repo_url == repo_url)
+            .filter(Service.dockerfile_path == dockerfile_path)
+            .filter(Remediation.updated_dockerfile != "")
+        )
+        if exclude_service_id:
+            query = query.filter(Service.id != exclude_service_id)
+
+        return query.order_by(Remediation.created_at.desc()).first()
+
+    def find_baseline(self, db, repo_url: str, dockerfile_path: str):
+        from models import Remediation, Service, Repository
+
+        first = (
+            db.query(Remediation)
+            .join(Service)
+            .join(Repository)
+            .filter(Repository.repo_url == repo_url)
+            .filter(Service.dockerfile_path == dockerfile_path)
+            .order_by(Remediation.created_at.asc())
+            .first()
+        )
+        if not first:
+            return None
+
+        original_total = (
+            first.current_critical
+            + first.current_high
+            + first.current_medium
+            + first.current_low
+        )
+        original_score = self.scoring_service.calculate_score(
+            {
+                "CRITICAL": first.current_critical,
+                "HIGH": first.current_high,
+                "MEDIUM": first.current_medium,
+                "LOW": first.current_low,
+            }
+        )
+
+        return {
+            "original_score": original_score,
+            "original_critical": first.current_critical,
+            "original_high": first.current_high,
+            "original_medium": first.current_medium,
+            "original_low": first.current_low,
+            "original_total": original_total,
+        }

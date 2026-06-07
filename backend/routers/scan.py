@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 import json
 
 from database import get_db
-from models import Repository, Service, Vulnerability, ScanHistory, Remediation
+from models import Repository, Service, Vulnerability, ScanHistory, Remediation, RemediationHistory
 from schemas import RepositoryScanRequest, RepositoryScanResponse
 from services.github_service import GitHubService
 from services.docker_service import DockerService
@@ -47,6 +47,7 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
         db.flush()
 
         total_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        pending_remediation_history = []
 
         for image_info in built_images:
             vulnerabilities = trivy_service.scan_image(image_info["image_name"])
@@ -85,17 +86,37 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
                 )
 
             if service_status == "FAIL":
+                prev_record = remediation_service.find_previous_remediation(
+                    db, request.repo_url, image_info["dockerfile_path"]
+                )
+                previous_remediation = None
+                if prev_record and prev_record.updated_dockerfile:
+                    previous_remediation = {
+                        "updated_dockerfile": prev_record.updated_dockerfile,
+                    }
+
+                baseline = remediation_service.find_baseline(
+                    db, request.repo_url, image_info["dockerfile_path"]
+                )
+
                 remediation_data = remediation_service.generate_remediation(
                     dockerfile_content=dockerfile_content,
                     vulnerabilities=vulnerabilities,
                     service_name=image_info["service_name"],
                     dockerfile_path=image_info["dockerfile_path"],
+                    previous_remediation=previous_remediation,
+                    baseline=baseline,
                 )
+
                 db.add(
                     Remediation(
                         service_id=service.id,
+                        remediation_state=remediation_data["remediation_state"],
+                        status_message=remediation_data["status_message"],
+                        show_generate_fix=1 if remediation_data["show_generate_fix"] else 0,
                         current_dockerfile=remediation_data["current_dockerfile"],
                         updated_dockerfile=remediation_data["updated_dockerfile"],
+                        previous_updated_dockerfile=remediation_data["previous_updated_dockerfile"],
                         root_cause_analysis=json.dumps(remediation_data["root_cause_analysis"]),
                         recommended_fixes=json.dumps(remediation_data["recommended_fixes"]),
                         vulnerabilities_json=json.dumps(remediation_data["vulnerabilities_found"]),
@@ -107,9 +128,27 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
                         estimated_high=remediation_data["estimated_high"],
                         estimated_medium=remediation_data["estimated_medium"],
                         estimated_low=remediation_data["estimated_low"],
+                        remaining_critical=remediation_data["remaining_critical"],
+                        remaining_high=remediation_data["remaining_high"],
+                        remaining_medium=remediation_data["remaining_medium"],
+                        remaining_low=remediation_data["remaining_low"],
                         current_decision=remediation_data["current_decision"],
                         estimated_decision=remediation_data["estimated_decision"],
+                        original_score=remediation_data["original_score"],
+                        score_after_remediation=remediation_data["score_after_remediation"],
+                        improvement_percentage=remediation_data["improvement_percentage"],
+                        original_critical=remediation_data["original_critical"],
+                        original_high=remediation_data["original_high"],
+                        original_medium=remediation_data["original_medium"],
+                        original_low=remediation_data["original_low"],
                     )
+                )
+                pending_remediation_history.append(
+                    {
+                        "service_name": image_info["service_name"],
+                        "dockerfile_path": image_info["dockerfile_path"],
+                        "data": remediation_data,
+                    }
                 )
 
         security_score = scoring_service.calculate_score(total_counts)
@@ -125,6 +164,27 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
             decision=decision,
         )
         db.add(scan_record)
+        db.flush()
+
+        for history_item in pending_remediation_history:
+            data = history_item["data"]
+            db.add(
+                RemediationHistory(
+                    repository_id=repository.id,
+                    scan_id=scan_record.id,
+                    service_name=history_item["service_name"],
+                    dockerfile_path=history_item["dockerfile_path"],
+                    remediation_state=data["remediation_state"],
+                    original_score=data["original_score"],
+                    score_after_remediation=data["score_after_remediation"],
+                    remaining_critical=data["remaining_critical"],
+                    remaining_high=data["remaining_high"],
+                    remaining_medium=data["remaining_medium"],
+                    remaining_low=data["remaining_low"],
+                    improvement_percentage=data["improvement_percentage"],
+                )
+            )
+
         db.commit()
         db.refresh(scan_record)
 

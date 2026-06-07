@@ -69,8 +69,12 @@ class Remediation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     service_id = Column(Integer, ForeignKey("services.id"), nullable=False, unique=True)
+    remediation_state = Column(String(32), default="REMEDIATION_AVAILABLE")
+    status_message = Column(Text, default="")
+    show_generate_fix = Column(Integer, default=1)
     current_dockerfile = Column(Text, nullable=False)
-    updated_dockerfile = Column(Text, nullable=False)
+    updated_dockerfile = Column(Text, default="")
+    previous_updated_dockerfile = Column(Text, default="")
     root_cause_analysis = Column(Text, nullable=False)
     recommended_fixes = Column(Text, nullable=False)
     vulnerabilities_json = Column(Text, default="[]")
@@ -82,11 +86,41 @@ class Remediation(Base):
     estimated_high = Column(Integer, default=0)
     estimated_medium = Column(Integer, default=0)
     estimated_low = Column(Integer, default=0)
+    remaining_critical = Column(Integer, default=0)
+    remaining_high = Column(Integer, default=0)
+    remaining_medium = Column(Integer, default=0)
+    remaining_low = Column(Integer, default=0)
     current_decision = Column(String(32), default="FAIL")
     estimated_decision = Column(String(32), default="PASS")
+    original_score = Column(Float, default=0.0)
+    score_after_remediation = Column(Float, default=0.0)
+    improvement_percentage = Column(Float, default=0.0)
+    original_critical = Column(Integer, default=0)
+    original_high = Column(Integer, default=0)
+    original_medium = Column(Integer, default=0)
+    original_low = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     service = relationship("Service", back_populates="remediation")
+
+
+class RemediationHistory(Base):
+    __tablename__ = "remediation_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    repository_id = Column(Integer, ForeignKey("repositories.id"), nullable=False)
+    scan_id = Column(Integer, ForeignKey("scan_history.id"), nullable=False)
+    service_name = Column(String(255), nullable=False)
+    dockerfile_path = Column(String(512), nullable=False)
+    remediation_state = Column(String(32), default="REMEDIATION_AVAILABLE")
+    original_score = Column(Float, default=0.0)
+    score_after_remediation = Column(Float, default=0.0)
+    remaining_critical = Column(Integer, default=0)
+    remaining_high = Column(Integer, default=0)
+    remaining_medium = Column(Integer, default=0)
+    remaining_low = Column(Integer, default=0)
+    improvement_percentage = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Alert(Base):

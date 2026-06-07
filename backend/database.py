@@ -37,6 +37,6 @@ def wait_for_db(max_retries=30, delay=2):
 
 def init_db():
     wait_for_db()
-    from models import Repository, Service, Vulnerability, ScanHistory, Remediation, Alert  # noqa: F401
+    from models import Repository, Service, Vulnerability, ScanHistory, Remediation, RemediationHistory, Alert  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
