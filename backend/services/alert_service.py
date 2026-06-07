@@ -14,37 +14,25 @@ class AlertService:
     ) -> list[Alert]:
         alerts = []
 
-        if counts.get("CRITICAL", 0) > 0:
+        if decision == "FAIL":
             alerts.append(
                 Alert(
                     repository_id=repository_id,
                     message=(
                         f"Security gate FAILED for {repository_name}: "
-                        f"{counts['CRITICAL']} critical vulnerabilities detected."
+                        f"fixable critical or high vulnerabilities require remediation."
                     ),
                     severity="CRITICAL",
                 )
             )
 
-        if counts.get("HIGH", 0) > 5:
+        if decision == "PASS_WITH_RISK":
             alerts.append(
                 Alert(
                     repository_id=repository_id,
                     message=(
-                        f"Security gate FAILED for {repository_name}: "
-                        f"{counts['HIGH']} high vulnerabilities exceed threshold of 5."
-                    ),
-                    severity="HIGH",
-                )
-            )
-
-        if counts.get("MEDIUM", 0) > 20:
-            alerts.append(
-                Alert(
-                    repository_id=repository_id,
-                    message=(
-                        f"Security gate WARNING for {repository_name}: "
-                        f"{counts['MEDIUM']} medium vulnerabilities exceed threshold of 20."
+                        f"Security gate PASS WITH RISK for {repository_name}: "
+                        f"deployment approved. Remaining vulnerabilities have no vendor fix."
                     ),
                     severity="MEDIUM",
                 )

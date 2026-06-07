@@ -12,8 +12,11 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Repository, Service, Vulnerability, ScanHistory
+from models import Repository, Service, ScanHistory
 from schemas import ScanHistoryResponse
+from services.policy_service import PolicyService
+
+policy_service = PolicyService()
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -38,6 +41,8 @@ def get_scan_history(db: Session = Depends(get_db)):
             low=scan.low,
             security_score=scan.security_score,
             decision=scan.decision,
+            fixable_count=getattr(scan, "fixable_count", 0) or 0,
+            unfixable_count=getattr(scan, "unfixable_count", 0) or 0,
             created_at=scan.created_at,
         )
         for scan in scans
@@ -56,6 +61,7 @@ def _build_report_data(scan_id: int, db: Session) -> dict:
         .all()
     )
 
+    all_vulns = []
     services_data = []
     for service in services:
         vulns = [
@@ -66,9 +72,15 @@ def _build_report_data(scan_id: int, db: Session) -> dict:
                 "installed_version": v.installed_version,
                 "fixed_version": v.fixed_version,
                 "description": v.description,
+                "classification": (
+                    "FIXABLE" if policy_service.is_fixable(
+                        {"fixed_version": v.fixed_version or ""}
+                    ) else "UNFIXABLE"
+                ),
             }
             for v in service.vulnerabilities
         ]
+        all_vulns.extend(vulns)
         services_data.append(
             {
                 "service_name": service.service_name,
@@ -77,6 +89,8 @@ def _build_report_data(scan_id: int, db: Session) -> dict:
                 "vulnerabilities": vulns,
             }
         )
+
+    classification = policy_service.classify_vulnerabilities(all_vulns)
 
     return {
         "scan_id": scan.id,
@@ -90,6 +104,8 @@ def _build_report_data(scan_id: int, db: Session) -> dict:
             "low": scan.low,
             "security_score": scan.security_score,
             "decision": scan.decision,
+            "fixable_count": getattr(scan, "fixable_count", None) or classification["fixable_count"],
+            "unfixable_count": getattr(scan, "unfixable_count", None) or classification["unfixable_count"],
         },
         "services": services_data,
     }
@@ -183,6 +199,8 @@ def download_pdf_report(scan_id: int, db: Session = Depends(get_db)):
         ["Low", str(summary["low"])],
         ["Security Score", str(summary["security_score"])],
         ["Decision", summary["decision"]],
+        ["Fixable Vulnerabilities", str(summary.get("fixable_count", 0))],
+        ["Unfixable Vulnerabilities", str(summary.get("unfixable_count", 0))],
     ]
     summary_table = Table(summary_data, colWidths=[2.5 * inch, 3 * inch])
     summary_table.setStyle(

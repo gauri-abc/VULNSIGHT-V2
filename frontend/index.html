@@ -131,9 +131,18 @@
           <div class="stat-label">Security Score</div>
           <div class="stat-value score" id="result-score">0</div>
         </div>
+        <div class="stat-card">
+          <div class="stat-label">Fixable Vulnerabilities</div>
+          <div class="stat-value" id="result-fixable">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Unfixable Vulnerabilities</div>
+          <div class="stat-value medium" id="result-unfixable">0</div>
+        </div>
         <div class="stat-card" style="grid-column: span 2; text-align: center;">
           <div class="stat-label">Deployment Decision</div>
           <div id="result-decision" class="decision-badge pass">PASS</div>
+          <p id="result-status-reason" style="margin-top:0.75rem;font-size:0.85rem;color:var(--text-secondary);"></p>
         </div>
       </div>
 

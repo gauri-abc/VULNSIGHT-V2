@@ -13,6 +13,11 @@ engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+SCAN_HISTORY_COLUMN_MIGRATIONS = [
+    ("fixable_count", "INTEGER DEFAULT 0"),
+    ("unfixable_count", "INTEGER DEFAULT 0"),
+]
+
 REMEDIATION_COLUMN_MIGRATIONS = [
     ("remediation_state", "VARCHAR(32) DEFAULT 'REMEDIATION_AVAILABLE'"),
     ("status_message", "TEXT DEFAULT ''"),
@@ -101,6 +106,15 @@ def migrate_schema():
                     "WHERE original_score IS NULL OR original_score = 0"
                 )
             )
+
+    if "scan_history" in table_names:
+        existing_cols = {col["name"] for col in inspector.get_columns("scan_history")}
+        with engine.begin() as conn:
+            for col_name, col_def in SCAN_HISTORY_COLUMN_MIGRATIONS:
+                if col_name not in existing_cols:
+                    conn.execute(
+                        text(f"ALTER TABLE scan_history ADD COLUMN {col_name} {col_def}")
+                    )
 
 
 def init_db():

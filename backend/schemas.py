@@ -19,6 +19,9 @@ class RepositoryScanResponse(BaseModel):
     low: int
     score: float
     decision: str
+    fixable_count: int = 0
+    unfixable_count: int = 0
+    status_reason: str = ""
 
 
 class ServiceResponse(BaseModel):
@@ -32,6 +35,10 @@ class ServiceResponse(BaseModel):
     low: int
     score: float
     status: str
+    fixable_count: int = 0
+    unfixable_count: int = 0
+    status_reason: str = ""
+    remediation_state: Optional[str] = None
 
 
 class ScanHistoryResponse(BaseModel):
@@ -44,6 +51,8 @@ class ScanHistoryResponse(BaseModel):
     low: int
     security_score: float
     decision: str
+    fixable_count: int = 0
+    unfixable_count: int = 0
     created_at: datetime
 
 
@@ -55,6 +64,7 @@ class DashboardStats(BaseModel):
     medium_vulnerabilities: int
     low_vulnerabilities: int
     pass_count: int
+    pass_with_risk_count: int
     fail_count: int
     warning_count: int
     average_security_score: float
@@ -94,6 +104,7 @@ class VulnerabilitySummary(BaseModel):
     installed_version: str
     fixed_version: str
     description: str
+    classification: Optional[str] = None
 
 
 class RemediationResponse(BaseModel):
@@ -131,6 +142,9 @@ class RemediationResponse(BaseModel):
     original_high: int
     original_medium: int
     original_low: int
+    fixable_count: int = 0
+    unfixable_count: int = 0
+    status_reason: str = ""
 
 
 class RemediationHistoryResponse(BaseModel):

@@ -7,6 +7,9 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Remediation, Service, ScanHistory, RemediationHistory, Repository
 from schemas import RemediationResponse, VulnerabilitySummary, RemediationHistoryResponse
+from services.policy_service import PolicyService
+
+policy_service = PolicyService()
 
 router = APIRouter(prefix="/api/remediation", tags=["remediation"])
 
@@ -27,6 +30,19 @@ def _to_response(remediation: Remediation, service: Service) -> RemediationRespo
     show_fix = remediation.show_generate_fix
     if show_fix is None:
         show_fix = 1 if remediation.updated_dockerfile else 0
+
+    vuln_dicts = [
+        {
+            "severity": v.get("severity", "LOW"),
+            "fixed_version": v.get("fixed_version", ""),
+            "package_name": v.get("package_name", ""),
+            "cve_id": v.get("cve_id", ""),
+        }
+        for v in vulns_raw
+    ]
+    classification = policy_service.classify_vulnerabilities(vuln_dicts)
+    decision = remediation.current_decision or "FAIL"
+    status_reason = policy_service.get_status_reason(vuln_dicts, decision, state)
 
     return RemediationResponse(
         id=remediation.id,
@@ -71,6 +87,9 @@ def _to_response(remediation: Remediation, service: Service) -> RemediationRespo
             remediation.original_medium, remediation.current_medium
         ),
         original_low=_safe_int(remediation.original_low, remediation.current_low),
+        fixable_count=classification["fixable_count"],
+        unfixable_count=classification["unfixable_count"],
+        status_reason=status_reason,
     )
 
 

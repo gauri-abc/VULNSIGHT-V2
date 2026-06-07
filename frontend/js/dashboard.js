@@ -30,6 +30,7 @@ function renderStats(stats) {
   document.getElementById("stat-medium").textContent = stats.medium_vulnerabilities;
   document.getElementById("stat-low").textContent = stats.low_vulnerabilities;
   document.getElementById("stat-pass").textContent = stats.pass_count;
+  document.getElementById("stat-pass-risk").textContent = stats.pass_with_risk_count || 0;
   document.getElementById("stat-fail").textContent = stats.fail_count;
   document.getElementById("stat-avg-score").textContent = stats.average_security_score;
 }

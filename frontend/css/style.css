@@ -401,6 +401,19 @@ a:hover {
   border: 2px solid var(--danger);
 }
 
+.decision-badge.pass_with_risk,
+.decision-badge.pass-with-risk {
+  background: rgba(217, 119, 6, 0.12);
+  color: #b45309;
+  border: 2px solid var(--warning);
+}
+
+.status-badge.pass_with_risk,
+.status-badge.pass-with-risk {
+  background: rgba(217, 119, 6, 0.12);
+  color: #b45309;
+}
+
 /* Tables */
 .table-container {
   overflow-x: auto;

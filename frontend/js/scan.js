@@ -84,15 +84,24 @@ function displayResults(data) {
   document.getElementById("result-low").textContent = data.low;
   document.getElementById("result-score").textContent = data.score;
 
+  document.getElementById("result-fixable").textContent = data.fixable_count || 0;
+  document.getElementById("result-unfixable").textContent = data.unfixable_count || 0;
+
   const decisionEl = document.getElementById("result-decision");
-  decisionEl.textContent = data.decision;
-  decisionEl.className = "decision-badge " + data.decision.toLowerCase();
+  var displayDecision = data.decision === "PASS_WITH_RISK" ? "PASS WITH RISK" : data.decision;
+  decisionEl.textContent = displayDecision;
+  decisionEl.className = "decision-badge " + data.decision.toLowerCase().replace(/_/g, "-");
+
+  var reasonEl = document.getElementById("result-status-reason");
+  if (reasonEl) {
+    reasonEl.textContent = data.status_reason || "";
+  }
 
   localStorage.setItem("lastScanId", data.scan_id);
   localStorage.setItem("lastScanResult", JSON.stringify(data));
 
   var remediationLink = document.getElementById("remediation-link");
-  if (remediationLink && (data.decision === "FAIL" || data.critical > 0)) {
+  if (remediationLink && (data.decision === "FAIL" || data.decision === "PASS_WITH_RISK")) {
     remediationLink.style.display = "inline-flex";
   } else if (remediationLink) {
     remediationLink.style.display = "none";
@@ -133,9 +142,12 @@ async function handleScan(event) {
 
     completeWorkflowAnimation();
     displayResults(data);
+    var alertType = data.decision === "PASS" ? "success" :
+      data.decision === "PASS_WITH_RISK" ? "success" : "error";
+    var alertDecision = data.decision === "PASS_WITH_RISK" ? "PASS WITH RISK" : data.decision;
     showAlert(
-      "Security assessment completed. Decision: " + data.decision,
-      data.decision === "PASS" ? "success" : "error"
+      "Security assessment completed. Decision: " + alertDecision,
+      alertType
     );
   } catch (error) {
     if (workflowInterval) {

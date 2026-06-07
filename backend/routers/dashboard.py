@@ -32,6 +32,12 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
         .scalar()
         or 0
     )
+    pass_with_risk_count = (
+        db.query(func.count(ScanHistory.id))
+        .filter(ScanHistory.decision == "PASS_WITH_RISK")
+        .scalar()
+        or 0
+    )
     fail_count = (
         db.query(func.count(ScanHistory.id))
         .filter(ScanHistory.decision == "FAIL")
@@ -56,6 +62,7 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
         medium_vulnerabilities=severity_map.get("MEDIUM", 0),
         low_vulnerabilities=severity_map.get("LOW", 0),
         pass_count=pass_count,
+        pass_with_risk_count=pass_with_risk_count,
         fail_count=fail_count,
         warning_count=warning_count,
         average_security_score=average_security_score,

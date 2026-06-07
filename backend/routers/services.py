@@ -6,13 +6,20 @@ from models import Service, ScanHistory
 from schemas import ServiceResponse
 from services.scoring_service import ScoringService
 from services.policy_service import PolicyService
-from services.trivy_service import TrivyService
 
 router = APIRouter(prefix="/api/services", tags=["services"])
 
 scoring_service = ScoringService()
 policy_service = PolicyService()
-trivy_service = TrivyService()
+
+
+def _vuln_dict(v):
+    return {
+        "severity": v.severity,
+        "fixed_version": v.fixed_version or "",
+        "package_name": v.package_name,
+        "cve_id": v.cve_id,
+    }
 
 
 @router.get("/scan/{scan_id}", response_model=list[ServiceResponse])
@@ -29,14 +36,20 @@ def get_services_by_scan(scan_id: int, db: Session = Depends(get_db)):
 
     results = []
     for service in services:
-        vulns = service.vulnerabilities
-        counts = trivy_service.count_by_severity(
-            [{"severity": v.severity} for v in vulns]
+        vulns = [_vuln_dict(v) for v in service.vulnerabilities]
+        classification = policy_service.classify_vulnerabilities(vulns)
+        score = scoring_service.calculate_service_score(vulns)
+
+        remediation_state = None
+        if service.remediation:
+            remediation_state = service.remediation.remediation_state
+
+        status = policy_service.evaluate_deployment(
+            vulns, remediation_state=remediation_state
         )
-        score = scoring_service.calculate_service_score(
-            [{"severity": v.severity} for v in vulns]
+        status_reason = policy_service.get_status_reason(
+            vulns, status, remediation_state
         )
-        status = policy_service.evaluate_service(counts)
 
         results.append(
             ServiceResponse(
@@ -44,12 +57,16 @@ def get_services_by_scan(scan_id: int, db: Session = Depends(get_db)):
                 service_name=service.service_name,
                 dockerfile_path=service.dockerfile_path,
                 image_name=service.image_name,
-                critical=counts["CRITICAL"],
-                high=counts["HIGH"],
-                medium=counts["MEDIUM"],
-                low=counts["LOW"],
+                critical=classification["total_critical"],
+                high=classification["total_high"],
+                medium=classification["fixable_medium"] + classification["unfixable_medium"],
+                low=classification["fixable_low"] + classification["unfixable_low"],
                 score=score,
                 status=status,
+                fixable_count=classification["fixable_count"],
+                unfixable_count=classification["unfixable_count"],
+                status_reason=status_reason,
+                remediation_state=remediation_state,
             )
         )
 

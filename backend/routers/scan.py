@@ -47,15 +47,19 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
         db.flush()
 
         total_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        all_vulnerabilities = []
+        service_policy_data = []
         pending_remediation_history = []
 
         for image_info in built_images:
             vulnerabilities = trivy_service.scan_image(image_info["image_name"])
             counts = trivy_service.count_by_severity(vulnerabilities)
-            service_status = policy_service.evaluate_service(counts)
+            classification = policy_service.classify_vulnerabilities(vulnerabilities)
 
             for key in total_counts:
                 total_counts[key] += counts.get(key, 0)
+
+            all_vulnerabilities.extend(vulnerabilities)
 
             dockerfile_content = ""
             dockerfile_full = image_info.get("dockerfile_full_path", "")
@@ -85,7 +89,10 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
                     )
                 )
 
-            if service_status == "FAIL":
+            remediation_state = None
+            service_decision = policy_service.evaluate_deployment(vulnerabilities)
+
+            if remediation_service.needs_remediation_record(vulnerabilities, service_decision):
                 prev_record = remediation_service.find_previous_remediation(
                     db, request.repo_url, image_info["dockerfile_path"]
                 )
@@ -107,6 +114,9 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
                     previous_remediation=previous_remediation,
                     baseline=baseline,
                 )
+
+                remediation_state = remediation_data["remediation_state"]
+                service_decision = remediation_data["current_decision"]
 
                 db.add(
                     Remediation(
@@ -151,8 +161,27 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
                     }
                 )
 
+            service_policy_data.append(
+                {
+                    "vulnerabilities": vulnerabilities,
+                    "remediation_state": remediation_state,
+                }
+            )
+
+        repo_classification = policy_service.classify_vulnerabilities(all_vulnerabilities)
         security_score = scoring_service.calculate_score(total_counts)
-        decision = policy_service.evaluate(total_counts)
+        decision = policy_service.evaluate_repository(service_policy_data)
+        status_reason = policy_service.get_status_reason(
+            all_vulnerabilities, decision,
+            service_policy_data[0].get("remediation_state") if len(service_policy_data) == 1 else None,
+        )
+
+        if decision == "PASS_WITH_RISK":
+            status_reason = (
+                f"Deployment Approved. {repo_classification['unfixable_count']} vulnerabilities "
+                f"have no vendor-provided fix. All Dockerfile fixes applied. "
+                f"Waiting for upstream vendor security updates."
+            )
 
         scan_record = ScanHistory(
             repository_id=repository.id,
@@ -162,6 +191,8 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
             low=total_counts["LOW"],
             security_score=security_score,
             decision=decision,
+            fixable_count=repo_classification["fixable_count"],
+            unfixable_count=repo_classification["unfixable_count"],
         )
         db.add(scan_record)
         db.flush()
@@ -207,6 +238,9 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
             low=total_counts["LOW"],
             score=security_score,
             decision=decision,
+            fixable_count=repo_classification["fixable_count"],
+            unfixable_count=repo_classification["unfixable_count"],
+            status_reason=status_reason,
         )
 
     except HTTPException:

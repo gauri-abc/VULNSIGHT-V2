@@ -107,6 +107,14 @@ function formatState(state) {
   return state.replace("REMEDIATION_", "").replace(/_/g, " ");
 }
 
+function formatDecision(decision) {
+  return decision === "PASS_WITH_RISK" ? "PASS WITH RISK" : decision;
+}
+
+function decisionClass(decision) {
+  return decision.toLowerCase().replace(/_/g, "-");
+}
+
 function renderRemediationCard(rem) {
   const isAvailable = rem.remediation_state === "REMEDIATION_AVAILABLE";
   const isApplied = rem.remediation_state === "REMEDIATION_APPLIED";
@@ -124,6 +132,7 @@ function renderRemediationCard(rem) {
         "<td>" + escapeHtml(v.package_name) + "</td>" +
         "<td>" + escapeHtml(v.installed_version || "-") + "</td>" +
         "<td>" + escapeHtml(v.fixed_version || "-") + "</td>" +
+        "<td>" + escapeHtml(v.classification || "-") + "</td>" +
         "</tr>"
       );
     })
@@ -164,7 +173,7 @@ function renderRemediationCard(rem) {
       '<pre class="code-block"><code>' + escapeHtml(rem.current_dockerfile) + "</code></pre>" +
       '<p class="no-fix-message">' + escapeHtml(rem.status_message) + "</p>" +
       (isExhausted
-        ? '<p class="exhausted-message">Dockerfile already optimized. Remaining findings require newer upstream base images or package maintainer fixes.</p>'
+        ? '<p class="exhausted-message">No further Dockerfile remediation available. Dockerfile already optimized. Remaining findings require newer upstream base images or package maintainer fixes.</p>'
         : "") +
       "</div></div>";
   }
@@ -194,23 +203,27 @@ function renderRemediationCard(rem) {
     "</div>" +
     '<div class="header-badges">' +
     '<span class="state-badge ' + stateClass + '">' + formatState(rem.remediation_state) + "</span>" +
-    '<span class="status-badge fail">' + rem.current_decision + "</span>" +
+    '<span class="status-badge ' + decisionClass(rem.current_decision) + '">' + formatDecision(rem.current_decision) + "</span>" +
     "</div></div>" +
 
     '<div class="status-banner ' + statusBannerClass + '">' +
     "<strong>" + escapeHtml(rem.status_message) + "</strong>" +
-    (isApplied || isExhausted
-      ? '<p>Remaining vulnerabilities: <strong>' + remainingTotal + "</strong></p>"
+    (isExhausted && rem.current_decision === "PASS_WITH_RISK"
+      ? "<p><strong>Deployment Approved</strong> — No additional remediation available. All Dockerfile fixes applied. Waiting for vendor security updates.</p>"
       : "") +
+    (isApplied || isExhausted
+      ? '<p>Fixable: <strong>' + (rem.fixable_count || 0) + "</strong> | Unfixable: <strong>" + (rem.unfixable_count || 0) + "</strong></p>"
+      : '<p>Fixable: <strong>' + (rem.fixable_count || 0) + "</strong> | Unfixable: <strong>" + (rem.unfixable_count || 0) + "</strong></p>") +
+    (rem.status_reason ? "<p>" + escapeHtml(rem.status_reason) + "</p>" : "") +
     "</div>" +
 
     '<div class="remediation-section">' +
     "<h3>1. " + (isAvailable ? "Vulnerabilities Found" : "Remaining Vulnerabilities") + "</h3>" +
     '<div class="table-container">' +
     "<table><thead><tr>" +
-    "<th>CVE ID</th><th>Severity</th><th>Package</th><th>Installed</th><th>Fixed Version</th>" +
+    "<th>CVE ID</th><th>Severity</th><th>Package</th><th>Installed</th><th>Fixed Version</th><th>Type</th>" +
     "</tr></thead><tbody>" +
-    (vulnRows || '<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">No vulnerabilities</td></tr>') +
+    (vulnRows || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No vulnerabilities</td></tr>') +
     "</tbody></table></div></div>" +
 
     '<div class="remediation-section">' +
@@ -247,7 +260,7 @@ function renderRemediationCard(rem) {
     '<div class="improvement-stat"><span class="label">High</span><span class="value high">' + rightHigh + "</span></div>" +
     '<div class="improvement-stat"><span class="label">Medium</span><span class="value medium">' + rightMedium + "</span></div>" +
     '<div class="improvement-stat"><span class="label">Low</span><span class="value low">' + rightLow + "</span></div>" +
-    '<div class="improvement-decision"><span class="label">Decision</span><span class="status-badge ' + rightDecision.toLowerCase() + '">' + rightDecision + "</span></div>" +
+    '<div class="improvement-decision"><span class="label">Decision</span><span class="status-badge ' + decisionClass(rightDecision) + '">' + formatDecision(rightDecision) + "</span></div>" +
     "</div></div></div>" +
 
     "</div>"

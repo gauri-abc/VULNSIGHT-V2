@@ -4,6 +4,14 @@ document.addEventListener("DOMContentLoaded", function () {
   loadServices();
 });
 
+function formatDecision(status) {
+  return status === "PASS_WITH_RISK" ? "PASS WITH RISK" : status;
+}
+
+function decisionClass(status) {
+  return status.toLowerCase().replace(/_/g, "-");
+}
+
 async function loadServices() {
   const tbody = document.getElementById("services-table-body");
 
@@ -20,18 +28,25 @@ async function loadServices() {
 
     if (!services.length) {
       tbody.innerHTML =
-        '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:2rem;">' +
+        '<tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:2rem;">' +
         "No services found. Run a security scan first.</td></tr>";
       return;
     }
 
     tbody.innerHTML = services
       .map(function (svc) {
-        const statusClass = svc.status.toLowerCase();
+        const statusClass = decisionClass(svc.status);
         var remediateBtn = "";
         if (svc.status === "FAIL") {
           remediateBtn =
             ' <a href="remediation.html#remediation-' + svc.id + '" class="btn btn-secondary btn-remediate">Fix</a>';
+        }
+
+        var reasonHtml = "";
+        if (svc.status_reason) {
+          reasonHtml =
+            '<br><small style="color:var(--text-muted);max-width:280px;display:inline-block;">' +
+            escapeHtml(svc.status_reason) + "</small>";
         }
 
         return (
@@ -43,15 +58,18 @@ async function loadServices() {
           '<td><span class="severity-dot high"></span>' + svc.high + "</td>" +
           '<td><span class="severity-dot medium"></span>' + svc.medium + "</td>" +
           '<td><span class="severity-dot low"></span>' + svc.low + "</td>" +
+          "<td>" + (svc.fixable_count || 0) + "</td>" +
+          "<td>" + (svc.unfixable_count || 0) + "</td>" +
           "<td>" + svc.score + "</td>" +
-          '<td><span class="status-badge ' + statusClass + '">' + svc.status + "</span>" + remediateBtn + "</td>" +
+          '<td><span class="status-badge ' + statusClass + '">' + formatDecision(svc.status) + "</span>" +
+          reasonHtml + remediateBtn + "</td>" +
           "</tr>"
         );
       })
       .join("");
   } catch (error) {
     tbody.innerHTML =
-      '<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:2rem;">' +
+      '<tr><td colspan="11" style="text-align:center;color:var(--danger);padding:2rem;">' +
       "Failed to load services: " + escapeHtml(error.message) + "</td></tr>";
   }
 }
