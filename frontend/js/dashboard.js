@@ -51,10 +51,10 @@ function drawSeverityChart(data) {
   const chartHeight = height - padding.top - padding.bottom;
 
   const colors = {
-    CRITICAL: "#ef4444",
-    HIGH: "#f97316",
-    MEDIUM: "#f59e0b",
-    LOW: "#3b82f6",
+    CRITICAL: "#dc2626",
+    HIGH: "#ea580c",
+    MEDIUM: "#d97706",
+    LOW: "#2563eb",
   };
 
   const maxVal = Math.max.apply(null, data.map(function (d) { return d.count; }).concat([1]));
@@ -73,11 +73,11 @@ function drawSeverityChart(data) {
     ctx.roundRect(x, y, barWidth, barHeight, 4);
     ctx.fill();
 
-    ctx.fillStyle = "#94a3b8";
+    ctx.fillStyle = "#64748b";
     ctx.font = "11px Segoe UI, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(item.severity, x + barWidth / 2, height - padding.bottom + 20);
-    ctx.fillStyle = "#f1f5f9";
+    ctx.fillStyle = "#0f172a";
     ctx.fillText(String(item.count), x + barWidth / 2, y - 8);
   });
 }
@@ -121,19 +121,19 @@ function drawTopServicesChart(data) {
     const y = padding.top + i * (barHeight + gap) + gap / 2;
 
     const gradient = ctx.createLinearGradient(x, y, x + barW, y);
-    gradient.addColorStop(0, "#3b82f6");
-    gradient.addColorStop(1, "#8b5cf6");
+    gradient.addColorStop(0, "#2563eb");
+    gradient.addColorStop(1, "#6366f1");
     ctx.fillStyle = gradient;
     ctx.beginPath();
     ctx.roundRect(x, y, barW, barHeight, 4);
     ctx.fill();
 
-    ctx.fillStyle = "#94a3b8";
+    ctx.fillStyle = "#475569";
     ctx.font = "11px Segoe UI, sans-serif";
     ctx.textAlign = "right";
     ctx.fillText(item.service_name, padding.left - 10, y + barHeight / 2 + 4);
 
-    ctx.fillStyle = "#f1f5f9";
+    ctx.fillStyle = "#0f172a";
     ctx.textAlign = "left";
     ctx.fillText(String(item.total_vulnerabilities), x + barW + 8, y + barHeight / 2 + 4);
   });
@@ -175,7 +175,7 @@ function drawScoreTrendChart(data) {
     };
   });
 
-  ctx.strokeStyle = "#334155";
+  ctx.strokeStyle = "#e2e8f0";
   ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
     const y = padding.top + (chartHeight / 4) * i;
@@ -191,7 +191,7 @@ function drawScoreTrendChart(data) {
   }
 
   ctx.beginPath();
-  ctx.strokeStyle = "#3b82f6";
+  ctx.strokeStyle = "#2563eb";
   ctx.lineWidth = 2;
   points.forEach(function (p, i) {
     if (i === 0) ctx.moveTo(p.x, p.y);
@@ -200,8 +200,8 @@ function drawScoreTrendChart(data) {
   ctx.stroke();
 
   const gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartHeight);
-  gradient.addColorStop(0, "rgba(59, 130, 246, 0.3)");
-  gradient.addColorStop(1, "rgba(59, 130, 246, 0)");
+  gradient.addColorStop(0, "rgba(37, 99, 235, 0.15)");
+  gradient.addColorStop(1, "rgba(37, 99, 235, 0)");
   ctx.lineTo(points[points.length - 1].x, padding.top + chartHeight);
   ctx.lineTo(points[0].x, padding.top + chartHeight);
   ctx.closePath();
@@ -211,9 +211,9 @@ function drawScoreTrendChart(data) {
   points.forEach(function (p) {
     ctx.beginPath();
     ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-    ctx.fillStyle = "#3b82f6";
+    ctx.fillStyle = "#2563eb";
     ctx.fill();
-    ctx.strokeStyle = "#0f172a";
+    ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 2;
     ctx.stroke();
   });

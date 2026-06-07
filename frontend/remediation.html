@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VULNSIGHT-V2 | Remediation</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-brand">
+      <div class="nav-logo">VS</div>
+      <div>
+        <div class="nav-title">VULNSIGHT-V2</div>
+        <div class="nav-subtitle">DevSecOps Security Gate</div>
+      </div>
+    </div>
+    <ul class="nav-links">
+      <li><a href="index.html">Scan</a></li>
+      <li><a href="services.html">Services</a></li>
+      <li><a href="remediation.html" class="active">Remediation</a></li>
+      <li><a href="reports.html">Reports</a></li>
+      <li><a href="dashboard.html">Dashboard</a></li>
+    </ul>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <h1>Remediation Recommendations</h1>
+      <p>Manual fix guidance for failed services — update your repo, then re-scan</p>
+    </div>
+
+    <div class="remediation-workflow card">
+      <div class="workflow-pipeline">
+        <span class="pipeline-step active">Scan</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">Fix Recommendation</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">Updated Dockerfile</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">Developer Updates Repo</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">Re-Scan</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step pass-step">PASS</span>
+      </div>
+      <p class="remediation-note">
+        VULNSIGHT-V2 does not modify your repository or create pull requests.
+        Copy the updated Dockerfile, apply it manually in GitHub, then run another scan.
+      </p>
+    </div>
+
+    <div id="remediation-container">
+      <div class="empty-state">
+        <p>No failed services requiring remediation. Run a scan or all services passed the security gate.</p>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    VULNSIGHT-V2 &copy; 2026 &mdash; DevSecOps Security Gate Platform
+  </footer>
+
+  <script src="js/remediation.js"></script>
+</body>
+</html>

@@ -30,6 +30,7 @@ class Service(Base):
 
     repository = relationship("Repository", back_populates="services")
     vulnerabilities = relationship("Vulnerability", back_populates="service", cascade="all, delete-orphan")
+    remediation = relationship("Remediation", back_populates="service", uselist=False, cascade="all, delete-orphan")
 
 
 class Vulnerability(Base):
@@ -61,6 +62,31 @@ class ScanHistory(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     repository = relationship("Repository", back_populates="scan_history")
+
+
+class Remediation(Base):
+    __tablename__ = "remediations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    service_id = Column(Integer, ForeignKey("services.id"), nullable=False, unique=True)
+    current_dockerfile = Column(Text, nullable=False)
+    updated_dockerfile = Column(Text, nullable=False)
+    root_cause_analysis = Column(Text, nullable=False)
+    recommended_fixes = Column(Text, nullable=False)
+    vulnerabilities_json = Column(Text, default="[]")
+    current_critical = Column(Integer, default=0)
+    current_high = Column(Integer, default=0)
+    current_medium = Column(Integer, default=0)
+    current_low = Column(Integer, default=0)
+    estimated_critical = Column(Integer, default=0)
+    estimated_high = Column(Integer, default=0)
+    estimated_medium = Column(Integer, default=0)
+    estimated_low = Column(Integer, default=0)
+    current_decision = Column(String(32), default="FAIL")
+    estimated_decision = Column(String(32), default="PASS")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    service = relationship("Service", back_populates="remediation")
 
 
 class Alert(Base):

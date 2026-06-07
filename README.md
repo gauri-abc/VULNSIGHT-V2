@@ -13,6 +13,31 @@ VULNSIGHT-V2 automates the full container security pipeline:
 5. Parse and store vulnerabilities in PostgreSQL
 6. Calculate security scores and apply gate policies (PASS / WARNING / FAIL)
 7. Display results on a web dashboard and in Grafana
+8. Generate remediation recommendations for failed services (Phase 2)
+
+## Phase 2: Remediation Recommendations
+
+For every **failed service**, VULNSIGHT-V2 provides manual fix guidance:
+
+1. **Vulnerabilities Found** — CVE table with severity, package, and fix versions
+2. **Root Cause Analysis** — why the service failed the security gate
+3. **Recommended Fixes** — actionable steps to remediate
+4. **Updated Dockerfile** — complete replacement Dockerfile (not a patch)
+
+### Remediation Workflow
+
+```
+Scan → Fix Recommendation → Updated Dockerfile → Developer Updates Repo → Re-Scan → PASS
+```
+
+**Important:** VULNSIGHT-V2 does **not** modify repositories, create pull requests, or auto-apply fixes. The developer copies the updated Dockerfile, applies it manually in GitHub, and re-scans.
+
+### Remediation API
+
+- `GET /api/remediation/scan/{scan_id}` — remediations for all failed services in a scan
+- `GET /api/remediation/latest` — remediations from the latest scan
+- `GET /api/remediation/service/{service_id}` — single service remediation
+- `GET /api/remediation/service/{service_id}/download` — download updated Dockerfile
 
 ## Tech Stack
 
@@ -148,6 +173,7 @@ VULNSIGHT-V2/
 - **vulnerabilities** — CVE findings per service
 - **scan_history** — scan summaries with scores and decisions
 - **alerts** — policy violation notifications
+- **remediations** — fix recommendations for failed services
 
 ## GitHub Actions Integration (Future)
 

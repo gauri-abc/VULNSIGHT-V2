@@ -28,6 +28,12 @@ async function loadServices() {
     tbody.innerHTML = services
       .map(function (svc) {
         const statusClass = svc.status.toLowerCase();
+        var remediateBtn = "";
+        if (svc.status === "FAIL") {
+          remediateBtn =
+            ' <a href="remediation.html#remediation-' + svc.id + '" class="btn btn-secondary btn-remediate">Fix</a>';
+        }
+
         return (
           "<tr>" +
           "<td><strong>" + escapeHtml(svc.service_name) + "</strong></td>" +
@@ -38,7 +44,7 @@ async function loadServices() {
           '<td><span class="severity-dot medium"></span>' + svc.medium + "</td>" +
           '<td><span class="severity-dot low"></span>' + svc.low + "</td>" +
           "<td>" + svc.score + "</td>" +
-          '<td><span class="status-badge ' + statusClass + '">' + svc.status + "</span></td>" +
+          '<td><span class="status-badge ' + statusClass + '">' + svc.status + "</span>" + remediateBtn + "</td>" +
           "</tr>"
         );
       })

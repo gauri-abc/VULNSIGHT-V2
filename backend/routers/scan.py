@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+import json
+
 from database import get_db
-from models import Repository, Service, Vulnerability, ScanHistory
+from models import Repository, Service, Vulnerability, ScanHistory, Remediation
 from schemas import RepositoryScanRequest, RepositoryScanResponse
 from services.github_service import GitHubService
 from services.docker_service import DockerService
@@ -10,6 +12,7 @@ from services.trivy_service import TrivyService
 from services.scoring_service import ScoringService
 from services.policy_service import PolicyService
 from services.alert_service import AlertService
+from services.remediation_service import RemediationService
 
 router = APIRouter(prefix="/api", tags=["scan"])
 
@@ -19,6 +22,7 @@ trivy_service = TrivyService()
 scoring_service = ScoringService()
 policy_service = PolicyService()
 alert_service = AlertService()
+remediation_service = RemediationService()
 
 
 @router.post("/repository-scan", response_model=RepositoryScanResponse)
@@ -47,10 +51,16 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
         for image_info in built_images:
             vulnerabilities = trivy_service.scan_image(image_info["image_name"])
             counts = trivy_service.count_by_severity(vulnerabilities)
-            service_score = scoring_service.calculate_service_score(vulnerabilities)
+            service_status = policy_service.evaluate_service(counts)
 
             for key in total_counts:
                 total_counts[key] += counts.get(key, 0)
+
+            dockerfile_content = ""
+            dockerfile_full = image_info.get("dockerfile_full_path", "")
+            if dockerfile_full:
+                with open(dockerfile_full, "r", encoding="utf-8", errors="replace") as df:
+                    dockerfile_content = df.read()
 
             service = Service(
                 repository_id=repository.id,
@@ -71,6 +81,34 @@ def repository_scan(request: RepositoryScanRequest, db: Session = Depends(get_db
                         installed_version=vuln["installed_version"],
                         fixed_version=vuln["fixed_version"],
                         description=vuln["description"],
+                    )
+                )
+
+            if service_status == "FAIL":
+                remediation_data = remediation_service.generate_remediation(
+                    dockerfile_content=dockerfile_content,
+                    vulnerabilities=vulnerabilities,
+                    service_name=image_info["service_name"],
+                    dockerfile_path=image_info["dockerfile_path"],
+                )
+                db.add(
+                    Remediation(
+                        service_id=service.id,
+                        current_dockerfile=remediation_data["current_dockerfile"],
+                        updated_dockerfile=remediation_data["updated_dockerfile"],
+                        root_cause_analysis=json.dumps(remediation_data["root_cause_analysis"]),
+                        recommended_fixes=json.dumps(remediation_data["recommended_fixes"]),
+                        vulnerabilities_json=json.dumps(remediation_data["vulnerabilities_found"]),
+                        current_critical=remediation_data["current_critical"],
+                        current_high=remediation_data["current_high"],
+                        current_medium=remediation_data["current_medium"],
+                        current_low=remediation_data["current_low"],
+                        estimated_critical=remediation_data["estimated_critical"],
+                        estimated_high=remediation_data["estimated_high"],
+                        estimated_medium=remediation_data["estimated_medium"],
+                        estimated_low=remediation_data["estimated_low"],
+                        current_decision=remediation_data["current_decision"],
+                        estimated_decision=remediation_data["estimated_decision"],
                     )
                 )
 

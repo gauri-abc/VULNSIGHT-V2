@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_db
-from routers import scan, dashboard, reports, services
+from routers import scan, dashboard, reports, services, remediation
 
 app = FastAPI(
     title="VULNSIGHT-V2",
@@ -22,6 +22,7 @@ app.include_router(scan.router)
 app.include_router(dashboard.router)
 app.include_router(reports.router)
 app.include_router(services.router)
+app.include_router(remediation.router)
 
 
 @app.on_event("startup")

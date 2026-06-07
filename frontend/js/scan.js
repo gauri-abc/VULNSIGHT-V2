@@ -91,6 +91,13 @@ function displayResults(data) {
   localStorage.setItem("lastScanId", data.scan_id);
   localStorage.setItem("lastScanResult", JSON.stringify(data));
 
+  var remediationLink = document.getElementById("remediation-link");
+  if (remediationLink && (data.decision === "FAIL" || data.critical > 0)) {
+    remediationLink.style.display = "inline-flex";
+  } else if (remediationLink) {
+    remediationLink.style.display = "none";
+  }
+
   section.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 

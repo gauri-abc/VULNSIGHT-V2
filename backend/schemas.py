@@ -85,3 +85,34 @@ class AlertResponse(BaseModel):
     severity: str
     created_at: datetime
     repository_name: Optional[str] = None
+
+
+class VulnerabilitySummary(BaseModel):
+    cve_id: str
+    severity: str
+    package_name: str
+    installed_version: str
+    fixed_version: str
+    description: str
+
+
+class RemediationResponse(BaseModel):
+    id: int
+    service_id: int
+    service_name: str
+    dockerfile_path: str
+    current_dockerfile: str
+    updated_dockerfile: str
+    root_cause_analysis: list[str]
+    recommended_fixes: list[str]
+    vulnerabilities_found: list[VulnerabilitySummary]
+    current_critical: int
+    current_high: int
+    current_medium: int
+    current_low: int
+    estimated_critical: int
+    estimated_high: int
+    estimated_medium: int
+    estimated_low: int
+    current_decision: str
+    estimated_decision: str
