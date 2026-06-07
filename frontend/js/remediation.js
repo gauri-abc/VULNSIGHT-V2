@@ -38,6 +38,7 @@ async function loadRemediations() {
 
     container.innerHTML = remediations.map(renderRemediationCard).join("");
     bindCopyButtons();
+    bindDependencyCopyButtons();
 
     if (window.location.hash) {
       var target = document.querySelector(window.location.hash);
@@ -125,6 +126,7 @@ function renderRemediationCard(rem) {
 
   const vulnRows = rem.vulnerabilities_found
     .map(function (v) {
+      const source = v.remediation_source || (v.classification === "FIXABLE" ? "Dockerfile" : "-");
       return (
         "<tr>" +
         "<td>" + escapeHtml(v.cve_id) + "</td>" +
@@ -132,6 +134,7 @@ function renderRemediationCard(rem) {
         "<td>" + escapeHtml(v.package_name) + "</td>" +
         "<td>" + escapeHtml(v.installed_version || "-") + "</td>" +
         "<td>" + escapeHtml(v.fixed_version || "-") + "</td>" +
+        "<td>" + escapeHtml(source) + "</td>" +
         "<td>" + escapeHtml(v.classification || "-") + "</td>" +
         "</tr>"
       );
@@ -146,11 +149,50 @@ function renderRemediationCard(rem) {
     .map(function (f) { return "<li>" + escapeHtml(f) + "</li>"; })
     .join("");
 
+  var dependencySection = "";
+  const pendingDeps = (rem.dependency_fixes || []).filter(function (f) { return !f.applied; });
+  if (pendingDeps.length) {
+    const grouped = {};
+    pendingDeps.forEach(function (fix) {
+      if (!grouped[fix.source_file]) grouped[fix.source_file] = [];
+      grouped[fix.source_file].push(fix);
+    });
+
+    const depCards = Object.keys(grouped).map(function (sourceFile) {
+      const fixes = grouped[sourceFile];
+      const items = fixes.map(function (fix, idx) {
+        const fixId = "dep-fix-" + rem.service_id + "-" + idx;
+        return (
+          '<div class="dependency-fix-item">' +
+          "<div><strong>" + escapeHtml(fix.package_name) + "</strong></div>" +
+          '<div class="dependency-fix-row"><span class="label">Current:</span><code>' + escapeHtml(fix.current) + "</code></div>" +
+          '<div class="dependency-fix-row"><span class="label">Recommended:</span><code class="recommended" id="' + fixId + '">' + escapeHtml(fix.recommended) + "</code></div>" +
+          '<div class="dependency-fix-row"><span class="label">Reason:</span><span>' + escapeHtml(fix.reason) + "</span></div>" +
+          '<button class="btn btn-secondary btn-sm copy-dep-btn" data-target="' + fixId + '">Copy Fix</button>' +
+          "</div>"
+        );
+      }).join("");
+
+      return (
+        '<div class="dependency-file-card">' +
+        "<h4>" + escapeHtml(sourceFile) + "</h4>" + items +
+        "</div>"
+      );
+    }).join("");
+
+    dependencySection =
+      '<div class="remediation-section">' +
+      "<h3>4. Dependency Fixes</h3>" +
+      '<p class="dependency-intro">Update dependency files in your repository. Deployment remains <strong>FAIL</strong> until these fixes are applied and the image is re-scanned.</p>' +
+      '<div class="dependency-fixes-grid">' + depCards + "</div></div>";
+  }
+
   var dockerfileSection = "";
+  const dockerfileSectionNum = pendingDeps.length ? "5" : "4";
   if (isAvailable && rem.show_generate_fix && rem.updated_dockerfile) {
     dockerfileSection =
       '<div class="remediation-section">' +
-      "<h3>4. Updated Dockerfile</h3>" +
+      "<h3>" + dockerfileSectionNum + ". Updated Dockerfile</h3>" +
       '<div class="dockerfile-compare">' +
       '<div class="dockerfile-panel">' +
       "<h4>Current Dockerfile</h4>" +
@@ -164,10 +206,10 @@ function renderRemediationCard(rem) {
       '<button class="btn btn-primary copy-btn" data-service-id="' + rem.service_id + '">Copy Updated Dockerfile</button>' +
       '<a href="' + API_BASE + "/service/" + rem.service_id + '/download" class="btn btn-secondary download-btn" download>Download Updated Dockerfile</a>' +
       "</div></div></div></div>";
-  } else {
+  } else if (rem.show_generate_fix || rem.updated_dockerfile || isApplied || isExhausted) {
     dockerfileSection =
       '<div class="remediation-section">' +
-      "<h3>4. Dockerfile Status</h3>" +
+      "<h3>" + dockerfileSectionNum + ". Dockerfile Status</h3>" +
       '<div class="dockerfile-panel">' +
       "<h4>Current Dockerfile</h4>" +
       '<pre class="code-block"><code>' + escapeHtml(rem.current_dockerfile) + "</code></pre>" +
@@ -221,9 +263,9 @@ function renderRemediationCard(rem) {
     "<h3>1. " + (isAvailable ? "Vulnerabilities Found" : "Remaining Vulnerabilities") + "</h3>" +
     '<div class="table-container">' +
     "<table><thead><tr>" +
-    "<th>CVE ID</th><th>Severity</th><th>Package</th><th>Installed</th><th>Fixed Version</th><th>Type</th>" +
+    "<th>CVE ID</th><th>Severity</th><th>Package</th><th>Installed</th><th>Fixed Version</th><th>Source</th><th>Type</th>" +
     "</tr></thead><tbody>" +
-    (vulnRows || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No vulnerabilities</td></tr>') +
+    (vulnRows || '<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">No vulnerabilities</td></tr>') +
     "</tbody></table></div></div>" +
 
     '<div class="remediation-section">' +
@@ -236,6 +278,7 @@ function renderRemediationCard(rem) {
     (isExhausted ? '<p class="exhausted-message">No additional Dockerfile remediation available.</p>' : "") +
     "</div>" +
 
+    dependencySection +
     dockerfileSection +
 
     '<div class="remediation-section security-improvements">' +
@@ -265,6 +308,21 @@ function renderRemediationCard(rem) {
 
     "</div>"
   );
+}
+
+function bindDependencyCopyButtons() {
+  document.querySelectorAll(".copy-dep-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      const targetId = btn.getAttribute("data-target");
+      const el = targetId ? document.getElementById(targetId) : null;
+      const text = el ? el.textContent : "";
+      navigator.clipboard.writeText(text).then(function () {
+        const original = btn.textContent;
+        btn.textContent = "Copied!";
+        setTimeout(function () { btn.textContent = original; }, 2000);
+      });
+    });
+  });
 }
 
 function bindCopyButtons() {

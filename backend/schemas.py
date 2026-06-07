@@ -105,6 +105,22 @@ class VulnerabilitySummary(BaseModel):
     fixed_version: str
     description: str
     classification: Optional[str] = None
+    remediation_source: Optional[str] = None
+    remediation_type: Optional[str] = None
+
+
+class DependencyFix(BaseModel):
+    source_file: str
+    package_name: str
+    current: str
+    recommended: str
+    reason: str
+    cve_id: str
+    severity: str
+    installed_version: str = ""
+    fixed_version: str = ""
+    ecosystem: str = ""
+    applied: bool = False
 
 
 class RemediationResponse(BaseModel):
@@ -145,6 +161,8 @@ class RemediationResponse(BaseModel):
     fixable_count: int = 0
     unfixable_count: int = 0
     status_reason: str = ""
+    dependency_fixes: list[DependencyFix] = []
+    pending_dependency_count: int = 0
 
 
 class RemediationHistoryResponse(BaseModel):

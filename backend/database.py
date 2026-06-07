@@ -19,6 +19,7 @@ SCAN_HISTORY_COLUMN_MIGRATIONS = [
 ]
 
 REMEDIATION_COLUMN_MIGRATIONS = [
+    ("dependency_fixes_json", "TEXT DEFAULT '[]'"),
     ("remediation_state", "VARCHAR(32) DEFAULT 'REMEDIATION_AVAILABLE'"),
     ("status_message", "TEXT DEFAULT ''"),
     ("show_generate_fix", "INTEGER DEFAULT 1"),

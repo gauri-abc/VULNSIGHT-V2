@@ -715,6 +715,72 @@ tbody tr:last-child td {
   font-weight: 600;
 }
 
+.dependency-intro {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.dependency-fixes-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.dependency-file-card {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+}
+
+.dependency-file-card h4 {
+  font-size: 0.95rem;
+  color: var(--accent);
+  margin-bottom: 0.75rem;
+  font-family: Consolas, monospace;
+}
+
+.dependency-fix-item {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.dependency-fix-item:last-child {
+  border-bottom: none;
+}
+
+.dependency-fix-row {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.35rem 0;
+  font-size: 0.85rem;
+  align-items: baseline;
+}
+
+.dependency-fix-row .label {
+  color: var(--text-muted);
+  min-width: 100px;
+  font-weight: 600;
+}
+
+.dependency-fix-row code {
+  font-family: Consolas, monospace;
+  background: var(--bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.dependency-fix-row code.recommended {
+  color: var(--success);
+  border: 1px solid rgba(22, 163, 74, 0.25);
+}
+
+.btn-sm {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+}
+
 .remediation-list {
   list-style: none;
   padding: 0;

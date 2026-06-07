@@ -46,11 +46,20 @@ class PolicyService:
         self,
         vulnerabilities: list[dict],
         remediation_state: str | None = None,
+        pending_dependency_fixes: list[dict] | None = None,
     ) -> str:
         if not vulnerabilities:
             return "PASS"
 
         classification = self.classify_vulnerabilities(vulnerabilities)
+
+        if pending_dependency_fixes:
+            critical_high_deps = [
+                f for f in pending_dependency_fixes
+                if f.get("severity") in ("CRITICAL", "HIGH")
+            ]
+            if critical_high_deps:
+                return "FAIL"
 
         if classification["fixable_critical"] > 0 or classification["fixable_high"] > 0:
             return "FAIL"
@@ -69,12 +78,14 @@ class PolicyService:
     def evaluate_repository(self, services: list[dict]) -> str:
         all_vulnerabilities = []
         remediation_states = []
+        all_pending_deps = []
 
         for service in services:
             all_vulnerabilities.extend(service.get("vulnerabilities", []))
             state = service.get("remediation_state")
             if state:
                 remediation_states.append(state)
+            all_pending_deps.extend(service.get("pending_dependency_fixes", []))
 
         if not all_vulnerabilities:
             return "PASS"
@@ -84,7 +95,9 @@ class PolicyService:
             aggregate_state = REMEDIATION_EXHAUSTED
 
         return self.evaluate_deployment(
-            all_vulnerabilities, remediation_state=aggregate_state
+            all_vulnerabilities,
+            remediation_state=aggregate_state,
+            pending_dependency_fixes=all_pending_deps,
         )
 
     def get_status_reason(
@@ -92,9 +105,11 @@ class PolicyService:
         vulnerabilities: list[dict],
         decision: str,
         remediation_state: str | None = None,
+        pending_dependency_fixes: list[dict] | None = None,
     ) -> str:
         classification = self.classify_vulnerabilities(vulnerabilities)
         total = len(vulnerabilities)
+        pending_deps = pending_dependency_fixes or []
 
         if decision == "PASS":
             return "No critical or high vulnerabilities detected."
@@ -103,8 +118,23 @@ class PolicyService:
             return (
                 f"{total} vulnerabilities remain. "
                 f"{classification['unfixable_count']} have no vendor-provided fix. "
-                f"Deployment may continue. All Dockerfile fixes have been applied. "
+                f"Deployment may continue. All fixes have been applied. "
                 f"Waiting for upstream vendor security updates."
+            )
+
+        if pending_deps:
+            dep_files = sorted({f.get("source_file", "dependency file") for f in pending_deps})
+            critical_high = sum(
+                1 for f in pending_deps if f.get("severity") in ("CRITICAL", "HIGH")
+            )
+            if critical_high:
+                return (
+                    f"{critical_high} fixable critical/high dependency vulnerabilities "
+                    f"require updates in {', '.join(dep_files)} before deployment."
+                )
+            return (
+                f"{len(pending_deps)} dependency fixes required in "
+                f"{', '.join(dep_files)} before deployment."
             )
 
         if classification["fixable_critical"] > 0:
@@ -120,7 +150,7 @@ class PolicyService:
             )
 
         if remediation_state == REMEDIATION_AVAILABLE:
-            return "Dockerfile remediation available but not yet applied."
+            return "Remediation available but not yet applied."
 
         return "Security gate failed. Remediation required before deployment."
 

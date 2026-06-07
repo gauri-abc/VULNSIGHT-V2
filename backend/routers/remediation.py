@@ -6,7 +6,12 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Remediation, Service, ScanHistory, RemediationHistory, Repository
-from schemas import RemediationResponse, VulnerabilitySummary, RemediationHistoryResponse
+from schemas import (
+    RemediationResponse,
+    VulnerabilitySummary,
+    RemediationHistoryResponse,
+    DependencyFix,
+)
 from services.policy_service import PolicyService
 
 policy_service = PolicyService()
@@ -42,7 +47,15 @@ def _to_response(remediation: Remediation, service: Service) -> RemediationRespo
     ]
     classification = policy_service.classify_vulnerabilities(vuln_dicts)
     decision = remediation.current_decision or "FAIL"
-    status_reason = policy_service.get_status_reason(vuln_dicts, decision, state)
+    dependency_fixes_raw = json.loads(remediation.dependency_fixes_json or "[]")
+    dependency_fixes = [DependencyFix(**f) for f in dependency_fixes_raw]
+    pending_dependency_fixes = [f for f in dependency_fixes_raw if not f.get("applied")]
+    status_reason = policy_service.get_status_reason(
+        vuln_dicts,
+        decision,
+        state,
+        pending_dependency_fixes=pending_dependency_fixes,
+    )
 
     return RemediationResponse(
         id=remediation.id,
@@ -90,6 +103,8 @@ def _to_response(remediation: Remediation, service: Service) -> RemediationRespo
         fixable_count=classification["fixable_count"],
         unfixable_count=classification["unfixable_count"],
         status_reason=status_reason,
+        dependency_fixes=dependency_fixes,
+        pending_dependency_count=len(pending_dependency_fixes),
     )
 
 

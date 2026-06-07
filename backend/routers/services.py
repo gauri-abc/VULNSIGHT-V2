@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -41,14 +43,22 @@ def get_services_by_scan(scan_id: int, db: Session = Depends(get_db)):
         score = scoring_service.calculate_service_score(vulns)
 
         remediation_state = None
+        pending_dependency_fixes = []
         if service.remediation:
             remediation_state = service.remediation.remediation_state
+            dep_raw = json.loads(service.remediation.dependency_fixes_json or "[]")
+            pending_dependency_fixes = [f for f in dep_raw if not f.get("applied")]
 
         status = policy_service.evaluate_deployment(
-            vulns, remediation_state=remediation_state
+            vulns,
+            remediation_state=remediation_state,
+            pending_dependency_fixes=pending_dependency_fixes,
         )
         status_reason = policy_service.get_status_reason(
-            vulns, status, remediation_state
+            vulns,
+            status,
+            remediation_state,
+            pending_dependency_fixes=pending_dependency_fixes,
         )
 
         results.append(

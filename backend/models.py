@@ -80,6 +80,7 @@ class Remediation(Base):
     root_cause_analysis = Column(Text, nullable=False)
     recommended_fixes = Column(Text, nullable=False)
     vulnerabilities_json = Column(Text, default="[]")
+    dependency_fixes_json = Column(Text, default="[]")
     current_critical = Column(Integer, default=0)
     current_high = Column(Integer, default=0)
     current_medium = Column(Integer, default=0)
